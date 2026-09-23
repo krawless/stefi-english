@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Colours 3D – Lesson 4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/common.css">
+<style>
+  #labels { position: fixed; inset: 0; pointer-events: none; }
+  .lbl { position: absolute; left: 0; top: 0; font-weight: 800; letter-spacing: .04em; white-space: nowrap; opacity: 0; transition: opacity .3s;
+    font-size: clamp(15px, 2.4vw, 30px);
+    text-shadow: 2px 2px 0 #fff, -2px 2px 0 #fff, 2px -2px 0 #fff, -2px -2px 0 #fff, 0 3px 0 #fff, 0 5px 6px rgba(0,0,0,.12); }
+  [data-mode=learn] .lbl, .lbl.reveal { opacity: 1; }
+  .lbl > span { display: inline-block; }
+  .lbl.pop > span { animation: pop .55s cubic-bezier(.3,1.6,.5,1); }
+  @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.55); } 100% { transform: scale(1); } }
+
+  [data-mode=find] #replayBtn, [data-mode=paint] #replayBtn, [data-mode=fav] #replayBtn { display: block; }
+  .sr[data-mode=learn] #micBtn, .sr[data-mode=fav] #micBtn { display: block; }
+
+  #dots { position: fixed; top: 76px; left: 50%; transform: translateX(-50%); display: none; gap: 8px; }
+  [data-mode=paint] #dots { display: flex; }
+  #dots i { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid #d7e3ea; transition: all .4s; }
+
+  [data-mode=paint] #bubble { bottom: auto; top: 104px; }
+  [data-mode=find] #bubble, [data-mode=fav] #bubble { bottom: 24px; }
+
+  [data-mode=learn] #repeatBtn { display: block; }
+  [data-mode=paint]:not(.finished) #palette { display: flex; }
+  [data-mode=paint].finished #againBtn { display: block; }
+
+  #palette { flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 900px; }
+  .pot { border: none; background: #fff; border-radius: 22px; padding: 6px 6px 2px; width: clamp(62px, 9.5vw, 88px);
+    box-shadow: 0 5px 0 rgba(0,0,0,.1); display: flex; flex-direction: column; align-items: center; transition: transform .1s; }
+  .pot:active { transform: translateY(4px); }
+  .pot i { display: block; width: clamp(34px, 5vw, 50px); aspect-ratio: 1; border-radius: 52% 48% 55% 45% / 50% 55% 45% 50%;
+    box-shadow: inset -4px -5px 0 rgba(0,0,0,.15); }
+  .pot.white i { box-shadow: inset -4px -5px 0 rgba(0,0,0,.08), 0 0 0 2px #dfe5ea; }
+  .pot span { font-weight: 800; font-size: clamp(11px, 1.5vw, 16px); letter-spacing: .03em; }
+  .pot.dip { animation: dip .4s; }
+  @keyframes dip { 30% { transform: translateY(-14px) rotate(-8deg); } }
+</style>
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body data-mode="home">
+<div id="tint"></div>
+<div id="labels"></div>
+
+<div id="top">
+  <button id="homeBtn" class="icon" aria-label="Home">🏠</button>
+  <div id="title"></div>
+  <div id="stars">⭐ <b>0</b></div>
+  <button id="replayBtn" class="icon" aria-label="Listen again">🔊</button>
+  <button id="micBtn" class="icon" aria-label="Speak">🎤</button>
+</div>
+<div id="dots"></div>
+<div id="bubble" class="hidden"></div>
+
+<div id="bottom">
+  <button id="repeatBtn" class="big">▶ LISTEN AND REPEAT</button>
+  <div id="palette"></div>
+  <button id="againBtn" class="big">↻ PLAY AGAIN</button>
+</div>
+
+<div id="home">
+  <a class="back" href="index.html">← LESSONS</a>
+  <h1 id="logo"></h1>
+  <p>LESSON 4 · CLASA I</p>
+  <div class="cards">
+    <button class="card" data-go="learn" style="--c:#1e9bf0"><b>👀</b><strong>LOOK & LISTEN</strong><em>Ascultă și repetă</em></button>
+    <button class="card" data-go="find" style="--c:#4cc13a"><b>🔍</b><strong>LISTEN & FIND</strong><em>Ascultă și găsește</em></button>
+    <button class="card" data-go="paint" style="--c:#ff8a1c"><b>🎨</b><strong>LOOK & PAINT</strong><em>Colorează obiectele</em></button>
+    <button class="card" data-go="fav" style="--c:#ff7ec1"><b>❤️</b><strong>MY FAVOURITE</strong><em>Culoarea preferată</em></button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {
+  $, rand, wait, cap, shuffle, easeOutBack, easeInOut, COLOURS, byId, RAINBOW, actx, sfx, say, SR, listen,
+  ui, showBubble, hideBubble, ask, tint, addStar, createStage, SPH, CYL, CONE, BOX, mat, M, WHITE_M, INK_M,
+  pointer, setPointer, hitTest, tween, createConfetti,
+} from './shared/common.js';
+
+const ALIASES = { red: ['red', 'read', 'bread'], blue: ['blue', 'blew'], black: ['black', 'block'], pink: ['pink', 'ping'],
+  white: ['white'], yellow: ['yellow'], green: ['green'], brown: ['brown'], orange: ['orange'], purple: ['purple', 'people'] };
+function findColour(alts) {
+  const text = ' ' + alts.join(' | ') + ' ';
+  let best = null, bestAt = Infinity;
+  for (const c of COLOURS) for (const w of ALIASES[c.id]) {
+    const m = new RegExp(`\\b${w}\\b`).exec(text);
+    if (m && m.index < bestAt) { best = c.id; bestAt = m.index; }
+  }
+  return best;
+}
+
+$('#logo').innerHTML = [...'COLOURS'].map((ch, i) =>
+  `<span style="color:${['#e8262b', '#ff8a1c', '#efb300', '#4cc13a', '#1e9bf0', '#7b3fb5', '#ff7ec1'][i]};animation-delay:${i * .15}s">${ch}</span>`).join('');
+
+const stage = createStage();
+const { scene, camera } = stage;
+const worldDims = () => stage.dims();
+const confetti = createConfetti(scene);
+const burst = confetti.burst;
+
+// ---------- paint blobs with faces ----------
+const blobsGroup = new THREE.Group();
+scene.add(blobsGroup);
+const labelsEl = $('#labels');
+function makeBlob(c) {
+  const g = new THREE.Group();
+  const m = mat(c.hex, .32);
+  M(SPH, m, [0, 0, 0], [.78, .72, .5], g);
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + .3, r = .62 + rand() * .08, s = .42 + rand() * .1;
+    M(SPH, m, [Math.cos(a) * r, Math.sin(a) * r * .9, -.04], [s, s, s * .7], g);
+  }
+  const eyes = new THREE.Group(); eyes.position.y = .12; g.add(eyes);
+  const pupils = [];
+  for (const s of [-1, 1]) {
+    M(SPH, WHITE_M, [s * .24, 0, .42], [.16, .19, .12], eyes);
+    const p = M(SPH, INK_M, [s * .24, -.02, .52], [.085, .1, .06], eyes);
+    M(SPH, WHITE_M, [.03, .04, .6], [.35, .3, .3], p);
+    p.userData.base = p.position.clone(); pupils.push(p);
+    M(SPH, mat(0xff8fa3, .6), [s * .42, -.22, .4], [.09, .06, .03], g);
+  }
+  const smile = new THREE.Mesh(new THREE.TorusGeometry(.14, .035, 8, 20, Math.PI), c.id === 'black' ? WHITE_M : mat(0x3a1a1a, .4));
+  smile.position.set(0, -.18, .49); smile.rotation.z = Math.PI; g.add(smile);
+
+  const lbl = document.createElement('div');
+  lbl.className = 'lbl'; lbl.innerHTML = `<span style="color:${c.text}">${c.id.toUpperCase()}</span>`;
+  labelsEl.appendChild(lbl);
+
+  g.userData = { colour: c, eyes, pupils, label: lbl, cur: new THREE.Vector3(), tPos: new THREE.Vector3(), scale: .01, tScale: 1,
+    sq: { x: 0, v: 0 }, jump: { y: 0, v: 0 }, wig: 0, phase: rand() * 6, blinkAt: 1 + rand() * 4, blinkEnd: 0 };
+  return g;
+}
+const blobs = COLOURS.map(c => { const b = makeBlob(c); blobsGroup.add(b); return b; });
+const blobById = id => blobs.find(b => b.userData.colour.id === id);
+function poke(b, big = 1) {
+  const u = b.userData;
+  u.sq.v = 7 * big; u.jump.v = 4.5 * big; sfx.pop();
+  u.label.classList.remove('pop'); void u.label.offsetWidth; u.label.classList.add('pop');
+}
+const blobCenter = b => b.position.clone().add(new THREE.Vector3(0, 0, .5 * b.userData.scale));
+
+// ---------- grid layout ----------
+let grid = { slots: [], s: 1, cy: 0, uh: 1, w: 1 };
+let slotOf = blobs.map((_, i) => i);
+function layoutGrid() {
+  const { h, w, px } = worldDims();
+  const top = 84, bot = mode === 'learn' ? 150 : 100;
+  const uh = h - (top + bot) * px, cy = (bot - top) / 2 * px;
+  const sx = Math.min(3.4, w * .95 / 3), sy = uh / 3;
+  const s = Math.min(sx / 2.5, sy / 2.8);
+  grid = { s, cy, uh, w, slots: [] };
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) grid.slots.push(new THREE.Vector3((c - 1) * sx, cy + (1 - r) * sy + .25 * s, 0));
+  applyGrid();
+}
+function applyGrid() {
+  blobs.forEach((b, i) => { b.userData.tPos.copy(grid.slots[slotOf[i]]); b.userData.tScale = grid.s; });
+}
+
+// ---------- paint stage ----------
+const paintStage = new THREE.Group(); scene.add(paintStage);
+const inner = new THREE.Group(); inner.position.y = -1.25; paintStage.add(inner);
+const turntable = new THREE.Group(); inner.add(turntable);
+const tt = M(CYL, mat(0xffffff, .8), [0, -.12, 0], [1.6, .24, 1.6], turntable); tt.receiveShadow = true;
+const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, .07, 10, 60), mat(0x3cc3c8, .5)); ring.rotation.x = Math.PI / 2; ring.position.y = -.01; turntable.add(ring);
+const objRoot = new THREE.Group(); inner.add(objRoot);
+const finaleGroup = new THREE.Group(); paintStage.add(finaleGroup);
+paintStage.visible = false;
+
+const GREY = 0xa3aab3;
+const LEAF = mat(0x2e9e3e, .5), STEM = mat(0x7a4a22, .6);
+function face(parent, y, z, { spread = .22, size = .1, smile = true, smileY, smileW = .13 } = {}) {
+  for (const s of [-1, 1]) {
+    M(SPH, WHITE_M, [s * spread, y, z], [size, size * 1.15, size * .6], parent);
+    M(SPH, INK_M, [s * spread, y - size * .15, z + size * .45], [size * .55, size * .65, size * .35], parent);
+    M(SPH, WHITE_M, [s * spread + size * .2, y + size * .2, z + size * .62], [size * .18, size * .18, size * .1], parent);
+  }
+  if (smile) {
+    const sm = new THREE.Mesh(new THREE.TorusGeometry(smileW, smileW * .24, 8, 20, Math.PI), INK_M);
+    sm.position.set(0, smileY ?? y - size * 1.7, z - .02); sm.rotation.z = Math.PI; parent.add(sm);
+  }
+}
+const BUILD = {
+  sun(pm) {
+    const g = new THREE.Group(), c = new THREE.Group(); c.position.y = 1.25; g.add(c);
+    M(SPH, pm, [0, 0, 0], [.78, .78, .6], c);
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      M(CONE, pm, [Math.cos(a), Math.sin(a), 0], [.17, .42, .1], c).rotation.z = a - Math.PI / 2;
+    }
+    face(c, .12, .44, { spread: .24, size: .11, smileW: .17 });
+    return g;
+  },
+  strawberry(pm) {
+    const g = new THREE.Group();
+    const prof = [[0, 0], [.18, .08], [.42, .32], [.66, .72], [.76, 1.05], [.72, 1.35], [.5, 1.58], [.2, 1.68], [0, 1.7]];
+    M(new THREE.LatheGeometry(prof.map(p => new THREE.Vector2(...p)), 40), pm, [0, .02, 0], [1, 1, 1], g);
+    const rAt = h => { for (let i = 1; i < prof.length; i++) if (prof[i][1] >= h) { const [r0, h0] = prof[i - 1], [r1, h1] = prof[i]; return r0 + (r1 - r0) * (h - h0) / (h1 - h0); } return 0; };
+    const seed = mat(0xfff1a8, .4);
+    for (let i = 0; i < 60; i++) {
+      const h = .2 + rand() * 1.3, a = rand() * Math.PI * 2, r = rAt(h);
+      if (Math.sin(a) > .55 && h > .7 && h < 1.45) continue;
+      M(SPH, seed, [Math.cos(a) * r, .02 + h, Math.sin(a) * r], [.035, .05, .035], g);
+    }
+    for (let i = 0; i < 6; i++) {
+      const piv = new THREE.Group(); piv.position.y = 1.7; piv.rotation.y = -i / 6 * Math.PI * 2; g.add(piv);
+      M(SPH, LEAF, [.3, 0, 0], [.32, .05, .13], piv).rotation.z = -.35;
+    }
+    M(CYL, LEAF, [0, 1.84, 0], [.05, .3, .05], g);
+    face(g, 1.07, .7, { spread: .2, size: .09, smileW: .12 });
+    return g;
+  },
+  pig(pm) {
+    const g = new THREE.Group();
+    M(SPH, pm, [0, .95, 0], [.95, .88, .85], g);
+    M(CYL, pm, [0, .78, .82], [.34, .18, .24], g).rotation.x = Math.PI / 2;
+    const nose = mat(0x7a2f4a, .5);
+    for (const s of [-1, 1]) {
+      M(SPH, nose, [s * .11, .78, .91], [.06, .09, .03], g);
+      M(CONE, pm, [s * .55, 1.72, .1], [.25, .42, .12], g).rotation.z = -s * .5;
+    }
+    face(g, 1.18, .72, { spread: .32, size: .1, smileY: .5, smileW: .12 });
+    return g;
+  },
+  snowman(pm) {
+    const g = new THREE.Group();
+    M(SPH, pm, [0, .75, 0], [.75, .75, .75], g);
+    M(SPH, pm, [0, 1.78, 0], [.52, .52, .52], g);
+    const black = mat(0x222222, .5);
+    M(CYL, black, [0, 2.24, 0], [.48, .06, .48], g);
+    M(CYL, black, [0, 2.5, 0], [.32, .5, .32], g);
+    M(CYL, mat(0xe8262b, .5), [0, 2.34, 0], [.33, .1, .33], g);
+    M(CONE, mat(0xff8a1c, .5), [0, 1.74, .62], [.07, .35, .07], g).rotation.x = Math.PI / 2;
+    for (const s of [-1, 1]) M(SPH, black, [s * .17, 1.9, .46], [.055, .06, .04], g);
+    for (let i = 0; i < 5; i++) { const a = Math.PI * (1.2 + i * .15); M(SPH, black, [Math.cos(a) * .2, 1.68 + Math.sin(a) * .12, .5], [.03, .03, .03], g); }
+    [[1.1, .66], [.8, .75], [.5, .71]].forEach(([y, z]) => M(SPH, black, [0, y, z], [.06, .06, .04], g));
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(.44, .1, 10, 24), mat(0xe8262b, .6));
+    scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.35; scarf.castShadow = true; g.add(scarf);
+    M(BOX, mat(0xe8262b, .6), [.25, 1.1, .38], [.14, .45, .06], g).rotation.z = .15;
+    for (const s of [-1, 1]) M(CYL, STEM, [s * .95, 1.1, 0], [.03, .8, .03], g).rotation.z = s * 1.1;
+    return g;
+  },
+  bear(pm) {
+    const g = new THREE.Group();
+    M(SPH, pm, [0, .75, 0], [.72, .78, .62], g);
+    M(SPH, pm, [0, 1.75, .05], [.58, .52, .5], g);
+    const black = mat(0x1d1d24, .3);
+    for (const s of [-1, 1]) {
+      M(SPH, pm, [s * .4, 2.2, 0], [.2, .2, .12], g);
+      M(SPH, pm, [s * .62, .95, .15], [.2, .35, .2], g).rotation.z = s * .5;
+      M(SPH, pm, [s * .35, .18, .25], [.25, .2, .3], g);
+      M(SPH, black, [s * .2, 1.86, .47], [.06, .07, .04], g);
+      M(SPH, WHITE_M, [s * .2 + .02, 1.88, .5], [.02, .02, .02], g);
+    }
+    M(SPH, pm, [0, 1.62, .45], [.22, .16, .14], g);
+    M(SPH, black, [0, 1.69, .58], [.08, .06, .05], g);
+    return g;
+  },
+  jeans(pm) {
+    const g = new THREE.Group(), gold = mat(0xf2c14e, .3);
+    M(BOX, pm, [0, 2.05, 0], [1.1, .32, .46], g);
+    M(BOX, pm, [0, 1.72, 0], [1.1, .4, .44], g);
+    for (const s of [-1, 1]) {
+      M(CYL, pm, [s * .3, .9, 0], [.27, 1.6, .22], g).rotation.z = s * .04;
+      M(BOX, gold, [s * .3, .95, .225], [.015, 1.4, .01], g).rotation.z = s * .04;
+      M(BOX, pm, [s * .38, 2.05, .235], [.06, .3, .02], g);
+    }
+    M(SPH, gold, [0, 2.05, .24], [.06, .06, .03], g);
+    M(BOX, gold, [.05, 1.72, .225], [.02, .36, .01], g);
+    return g;
+  },
+  orange(pm) {
+    const g = new THREE.Group();
+    M(SPH, pm, [0, .9, 0], [.88, .82, .88], g);
+    M(CYL, STEM, [0, 1.74, 0], [.05, .14, .05], g);
+    M(SPH, LEAF, [.28, 1.8, 0], [.32, .05, .14], g).rotation.z = .35;
+    face(g, .98, .84, { spread: .24, size: .1, smileW: .15 });
+    return g;
+  },
+  grapes(pm) {
+    const g = new THREE.Group();
+    [4, 3, 3, 2, 1].forEach((n, ri) => {
+      const y = 1.95 - ri * .34;
+      for (let i = 0; i < n; i++) M(SPH, pm, [(i - (n - 1) / 2) * .42, y, .12], [.23, .23, .23], g);
+      for (let i = 0; i < n - 1; i++) M(SPH, pm, [(i - (n - 2) / 2) * .42, y + .05, -.18], [.23, .23, .23], g);
+    });
+    M(CYL, STEM, [.05, 2.3, 0], [.05, .4, .05], g).rotation.z = .25;
+    M(SPH, LEAF, [.45, 2.35, 0], [.45, .06, .3], g).rotation.z = .35;
+    return g;
+  },
+  clover(pm) {
+    const g = new THREE.Group(), c = new THREE.Vector2(0, 1.55);
+    M(CYL, pm, [0, .7, 0], [.06, 1.4, .06], g);
+    M(SPH, pm, [0, c.y, .02], [.12, .12, .1], g);
+    for (let k = 0; k < 4; k++) {
+      const a = Math.PI / 4 + k * Math.PI / 2, d = new THREE.Vector2(Math.cos(a), Math.sin(a)), p = new THREE.Vector2(-d.y, d.x);
+      for (const s of [-1, 1]) M(SPH, pm, [d.x * .42 + p.x * .17 * s, c.y + d.y * .42 + p.y * .17 * s, 0], [.28, .28, .1], g);
+      M(SPH, pm, [d.x * .2, c.y + d.y * .2, 0], [.17, .17, .09], g);
+    }
+    return g;
+  },
+};
+const PAINT_ITEMS = [
+  { name: 'sun', colour: 'yellow' }, { name: 'strawberry', colour: 'red' }, { name: 'pig', colour: 'pink' },
+  { name: 'snowman', colour: 'white' }, { name: 'bear', colour: 'brown' }, { name: 'jeans', colour: 'blue', plural: true },
+  { name: 'orange', colour: 'orange' }, { name: 'grapes', colour: 'purple', plural: true }, { name: 'clover', colour: 'green' },
+];
+const PALETTE = ['orange', 'blue', 'green', 'white', 'brown', 'yellow', 'red', 'pink', 'purple'];
+function buildItem(it, hex) {
+  const pm = mat(hex, .4); pm.side = THREE.DoubleSide;
+  const o = BUILD[it.name](pm); o.userData.pm = pm; return o;
+}
+
+PALETTE.forEach(id => {
+  const c = byId[id], b = document.createElement('button');
+  b.className = 'pot ' + id;
+  b.innerHTML = `<i style="background:radial-gradient(circle at 32% 28%, rgba(255,255,255,.75), transparent 38%), ${c.css}"></i><span style="color:${c.text}">${id.toUpperCase()}</span>`;
+  b.onclick = () => { b.classList.remove('dip'); void b.offsetWidth; b.classList.add('dip'); pickPaint(id); };
+  $('#palette').appendChild(b);
+});
+
+function layoutPaint() {
+  const { h, w, px } = worldDims();
+  const finished = document.body.classList.contains('finished');
+  const top = 160, bot = finished ? 90 : $('#palette').offsetHeight + 30;
+  const uh = h - (top + bot) * px;
+  const s = finished ? Math.min(uh / 3.3, w / 7) : Math.min(uh / 3.7, w / 3.9, 1.5);
+  paintStage.position.set(0, (bot - top) / 2 * px, 0);
+  paintStage.scale.setScalar(s);
+}
+
+// ---------- modes ----------
+let mode = 'home', token = 0, locked = false;
+const TITLES = { learn: 'LOOK, LISTEN AND REPEAT', find: 'LISTEN AND FIND', paint: 'LOOK AND PAINT', fav: 'MY FAVOURITE COLOUR' };
+function setMode(m) {
+  mode = m; token++; locked = false;
+  document.body.dataset.mode = m; document.body.classList.remove('finished');
+  speechSynthesis.cancel(); hideBubble(); tint(null);
+  $('#title').textContent = TITLES[m] || '';
+  blobs.forEach(b => b.userData.label.classList.remove('reveal'));
+  blobsGroup.visible = m !== 'paint'; paintStage.visible = m === 'paint';
+  slotOf = blobs.map((_, i) => i); favChosen = null;
+  if (m === 'learn' || m === 'find' || m === 'fav') layoutGrid();
+  if (m === 'learn') ask('Look, listen and repeat!', '👆 TAP A COLOUR!');
+  if (m === 'find') startFind();
+  if (m === 'paint') startPaint();
+  if (m === 'fav') ask("What's your favourite colour?", "WHAT'S YOUR FAVOURITE COLOUR?");
+}
+
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { actx().resume(); sfx.pop(); setMode(b.dataset.go); });
+$('#homeBtn').onclick = () => { sfx.pop(); setMode('home'); };
+$('#replayBtn').onclick = () => { if (ui.lastPrompt) say(ui.lastPrompt); };
+$('#againBtn').onclick = () => { sfx.pop(); document.body.classList.remove('finished'); startPaint(); };
+
+// --- learn ---
+let seqRunning = false;
+$('#repeatBtn').onclick = async () => {
+  if (seqRunning) return;
+  seqRunning = true; $('#repeatBtn').disabled = true;
+  const tk = token;
+  for (const b of blobs) {
+    if (tk !== token) break;
+    const id = b.userData.colour.id;
+    poke(b); showBubble(`${id.toUpperCase()}<small>🗣️ NOW YOU!</small>`);
+    await say(cap(id));
+    await wait(1500);
+  }
+  if (tk === token) { sfx.win(); burst(new THREE.Vector3(0, 0, 1), RAINBOW, 120); showBubble('⭐ SUPER! ⭐'); addStar(); say('Super!'); }
+  seqRunning = false; $('#repeatBtn').disabled = false;
+};
+
+// --- find ---
+let target = null;
+async function startFind() {
+  const tk = token;
+  locked = true;
+  blobs.forEach(b => b.userData.label.classList.remove('reveal'));
+  slotOf = shuffle(slotOf); applyGrid();
+  blobs.forEach(b => { b.userData.jump.v = 3 + rand() * 2; });
+  const choices = COLOURS.filter(c => c.id !== target);
+  target = choices[Math.floor(rand() * choices.length)].id;
+  await wait(800);
+  if (tk !== token) return;
+  locked = false;
+  ask(`Find ${target}!`, '🔍 FIND… 🔊');
+}
+async function findTap(b) {
+  if (locked) return;
+  const id = b.userData.colour.id, tk = token;
+  b.userData.label.classList.add('reveal');
+  if (id === target) {
+    locked = true; poke(b, 1.3); sfx.win(); burst(blobCenter(b), [b.userData.colour.hex, 0xffd60a, 0xffffff], 90); addStar();
+    showBubble(`✅ ${id.toUpperCase()}!`);
+    await say(`Yes! ${cap(id)}! Well done!`);
+    await wait(500);
+    if (tk === token) startFind();
+  } else {
+    b.userData.wig = 1; sfx.nope();
+    showBubble(`${id.toUpperCase()}? 🙈`);
+    await say(`This is ${id}. Find ${target}!`);
+    if (tk === token) setTimeout(() => b.userData.label.classList.remove('reveal'), 600);
+  }
+}
+
+// --- paint ---
+let order = [], idx = 0, current = null, done = [];
+function renderDots() {
+  $('#dots').innerHTML = order.map((it, i) => {
+    const c = byId[it.colour];
+    return i < done.length ? `<i style="background:${c.css};border-color:${c.id === 'white' ? '#d7e3ea' : c.css}"></i>` : `<i></i>`;
+  }).join('');
+}
+function question(it) { return it.plural ? `What colour are the ${it.name}?` : `What colour is the ${it.name}?`; }
+function startPaint() {
+  const tk = token;
+  objRoot.clear(); finaleGroup.clear(); turntable.visible = true;
+  order = shuffle(PAINT_ITEMS); idx = 0; done = []; renderDots();
+  requestAnimationFrame(() => { if (tk === token) { layoutPaint(); showItem(); } });
+}
+async function showItem() {
+  const it = order[idx], obj = buildItem(it, GREY);
+  obj.scale.setScalar(.01); objRoot.add(obj);
+  current = { it, obj }; locked = false;
+  tween(650, t => obj.scale.setScalar(Math.max(.01, easeOutBack(t))));
+  sfx.pop();
+  ask(question(it), `🖌️ ${question(it).toUpperCase()}`);
+}
+function tweenColour(m, hex, ms) { const from = m.color.clone(), to = new THREE.Color(hex); return tween(ms, t => m.color.lerpColors(from, to, t)); }
+async function pickPaint(id) {
+  if (locked || !current) return;
+  const { it, obj } = current, c = byId[id], tk = token;
+  locked = true; sfx.splat();
+  const pos = obj.localToWorld(new THREE.Vector3(0, 1.25, .9));
+  burst(pos, [c.hex], 50, .8);
+  tween(350, t => { const k = Math.sin(t * Math.PI) * .18; obj.scale.set(1 + k, 1 - k, 1 + k); });
+  if (id === it.colour) {
+    await tweenColour(obj.userData.pm, c.hex, 450);
+    sfx.win(); burst(pos, RAINBOW, 70); addStar();
+    done.push(it); renderDots();
+    const txt = it.plural ? `Yes! The ${it.name} are ${id}!` : `Yes! The ${it.name} is ${id}!`;
+    showBubble(`✅ ${txt.replace('Yes! ', '').toUpperCase()}`);
+    await say(txt);
+    await wait(400);
+    if (tk !== token) return;
+    await tween(450, t => { obj.position.x = easeInOut(t) * 7; obj.rotation.z = -t * 1.2; });
+    objRoot.remove(obj);
+    if (tk !== token) return;
+    if (++idx < order.length) showItem(); else paintFinale();
+  } else {
+    await tweenColour(obj.userData.pm, c.hex, 200);
+    sfx.nope();
+    tween(700, t => { obj.rotation.z = Math.sin(t * Math.PI * 7) * .2 * (1 - t); });
+    const article = it.plural ? '' : (/^[aeiou]/.test(id) ? 'An ' : 'A ');
+    const txt = `${article}${id} ${it.name}? No, no, no!`;
+    showBubble(`🙈 ${txt.toUpperCase()}`);
+    await say(txt);
+    if (tk !== token) return;
+    await tweenColour(obj.userData.pm, GREY, 400);
+    locked = false;
+    ask(question(it), `🖌️ ${question(it).toUpperCase()}`);
+  }
+}
+async function paintFinale() {
+  const tk = token;
+  document.body.classList.add('finished'); turntable.visible = false; layoutPaint();
+  showBubble('⭐ WELL DONE! ⭐');
+  PAINT_ITEMS.forEach((it, i) => {
+    const o = buildItem(it, byId[it.colour].hex), row = i < 5 ? 0 : 1, n = row ? 4 : 5, k = row ? i - 5 : i;
+    o.position.set((k - (n - 1) / 2) * 1.35, row ? -1.6 : .2, 0);
+    o.scale.setScalar(.001); o.userData.phase = rand() * 6; finaleGroup.add(o);
+    setTimeout(() => { if (tk !== token) return; sfx.pop(); tween(500, t => o.scale.setScalar(Math.max(.001, .5 * easeOutBack(t)))); }, 300 + i * 200);
+  });
+  await wait(2200);
+  if (tk !== token) return;
+  sfx.fanfare(); addStar(3);
+  for (let i = 0; i < 4; i++) setTimeout(() => burst(new THREE.Vector3((rand() - .5) * 6, 1, 1), RAINBOW, 80), i * 250);
+  ui.lastPrompt = 'Well done! Beautiful colours!';
+  say(ui.lastPrompt);
+}
+
+// --- favourite ---
+let favChosen = null;
+function layoutFav() {
+  if (!favChosen) return applyGrid();
+  const { w } = worldDims(), others = blobs.filter(b => b !== favChosen);
+  favChosen.userData.tPos.set(0, grid.cy + .1 * grid.uh, 1);
+  favChosen.userData.tScale = Math.min(grid.uh / 3.9, w / 4.5);
+  others.forEach((b, i) => {
+    const a = (i + .5) / others.length * Math.PI * 2;
+    b.userData.tPos.set(Math.cos(a) * w * .38, grid.cy + Math.sin(a) * grid.uh * .42, -1.5);
+    b.userData.tScale = grid.s * .6;
+  });
+}
+async function chooseFav(b) {
+  const tk = token, id = b.userData.colour.id;
+  favChosen = b; layoutFav(); tint(b.userData.colour.css); poke(b, 1.4); sfx.win();
+  setTimeout(() => burst(new THREE.Vector3(0, grid.cy + 1, 2), [b.userData.colour.hex, 0xffffff], 120), 250);
+  const txt = `My favourite colour is ${id}.`;
+  ui.lastPrompt = txt;
+  showBubble(`❤️ ${txt.toUpperCase()}`);
+  await say(txt);
+  if (tk === token && favChosen === b) showBubble(`❤️ ${txt.toUpperCase()}<small>🗣️ NOW YOU SAY IT!</small>`);
+}
+
+// --- mic (learn + fav) ---
+let listening = false;
+$('#micBtn').onclick = async () => {
+  if (listening || !SR) return;
+  listening = true; speechSynthesis.cancel(); $('#micBtn').classList.add('on');
+  const tk = token;
+  showBubble('🎤 SAY A COLOUR!');
+  const id = findColour(await listen());
+  listening = false; $('#micBtn').classList.remove('on');
+  if (tk !== token) return;
+  if (!id) { sfx.nope(); showBubble('🤔 TRY AGAIN!'); say('Try again!'); return; }
+  const b = blobById(id);
+  addStar();
+  if (mode === 'fav') return chooseFav(b);
+  poke(b, 1.3); sfx.win(); burst(blobCenter(b), [b.userData.colour.hex, 0xffd60a], 80);
+  showBubble(`🎉 ${id.toUpperCase()}!`); say(`${cap(id)}! Well done!`);
+};
+
+// ---------- input ----------
+stage.renderer.domElement.addEventListener('pointerdown', e => {
+  actx().resume();
+  setPointer(e);
+  if (blobsGroup.visible) {
+    const b = hitTest(camera, blobsGroup.children, 'colour');
+    if (!b) return;
+    const id = b.userData.colour.id;
+    if (mode === 'find') return findTap(b);
+    if (mode === 'fav') return chooseFav(b);
+    poke(b); say(cap(id));
+    if (mode === 'learn') showBubble(id.toUpperCase());
+  } else if (mode === 'paint' && current?.obj.parent && hitTest(camera, [objRoot], 'pm')) {
+    tween(400, t => { const k = Math.sin(t * Math.PI) * .15; current.obj.scale.set(1 - k, 1 + k, 1 - k); });
+    sfx.pop(); say(ui.lastPrompt);
+  }
+});
+
+stage.onResize = () => {
+  if (mode === 'paint') layoutPaint(); else if (mode !== 'home') { layoutGrid(); if (mode === 'fav') layoutFav(); }
+};
+
+// ---------- loop ----------
+const proj = new THREE.Vector3();
+stage.loop((dt, t) => {
+  if (mode === 'home') {
+    const { w, h } = worldDims();
+    blobs.forEach((b, i) => {
+      const a = i / 9 * Math.PI * 2 + t * .12;
+      b.userData.tPos.set(Math.cos(a) * w * .5, Math.sin(a) * h * .46, -1.5);
+      b.userData.tScale = Math.min(w, h) * .075;
+    });
+  }
+  const follow = 1 - Math.exp(-dt * 5);
+  for (const b of blobs) {
+    const u = b.userData;
+    u.cur.lerp(u.tPos, follow);
+    u.scale += (u.tScale - u.scale) * (1 - Math.exp(-dt * 6));
+    u.sq.v += (-160 * u.sq.x - 9 * u.sq.v) * dt; u.sq.x += u.sq.v * dt;
+    u.jump.v -= 22 * dt; u.jump.y += u.jump.v * dt;
+    if (u.jump.y < 0) { u.jump.y = 0; u.jump.v = 0; }
+    u.wig = Math.max(0, u.wig - dt * 1.4);
+    const s = u.scale, q = THREE.MathUtils.clamp(u.sq.x * .06, -.3, .3);
+    b.position.set(u.cur.x, u.cur.y + (Math.sin(t * 2 + u.phase) * .06 + u.jump.y) * s, u.cur.z);
+    b.scale.set(s * (1 - q * .6), s * (1 + q), s * (1 - q * .6));
+    b.rotation.z = Math.sin(t * 1.3 + u.phase) * .05 + Math.sin(t * 30) * .3 * u.wig;
+    b.rotation.y = pointer.x * .3 + Math.sin(t * .7 + u.phase) * .12;
+    b.rotation.x = -pointer.y * .15;
+    if (t > u.blinkAt) { u.blinkEnd = t + .13; u.blinkAt = t + 2 + rand() * 4; }
+    u.eyes.scale.y = t < u.blinkEnd ? .1 : 1;
+    for (const p of u.pupils) { p.position.x = p.userData.base.x + pointer.x * .05; p.position.y = p.userData.base.y + pointer.y * .05; }
+    if (blobsGroup.visible && mode !== 'home') {
+      proj.set(b.position.x, b.position.y - 1.12 * s, b.position.z).project(camera);
+      u.label.style.transform = `translate(${(proj.x + 1) / 2 * innerWidth}px, ${(1 - proj.y) / 2 * innerHeight}px) translate(-50%, -50%)`;
+      u.label.style.visibility = 'visible';
+    } else u.label.style.visibility = 'hidden';
+  }
+  if (current?.obj.parent) current.obj.rotation.y = Math.sin(t * .9) * .6;
+  finaleGroup.children.forEach(o => { o.rotation.y = Math.sin(t * 1.2 + o.userData.phase) * .5; });
+  confetti.update(dt);
+});
+</script>
+</body>
+</html>

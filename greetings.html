@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Greetings – Lesson 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/common.css">
+<style>
+  #sky { position: fixed; inset: 0; }
+  #sky div { position: absolute; inset: 0; opacity: 0; transition: opacity 1.5s; }
+  #sky div.on { opacity: 1; }
+  #sky .day { background: linear-gradient(180deg, #c4f1ff 0%, #eafaff 55%, #fff4dc 100%); }
+  #sky .morning { background: linear-gradient(180deg, #ffb3c7 0%, #ffd9a8 55%, #fff1d6 100%); }
+  #sky .afternoon { background: linear-gradient(180deg, #4fc1ff 0%, #a8e4ff 55%, #e6f8ff 100%); }
+  #sky .evening { background: linear-gradient(180deg, #4a2c7a 0%, #b4518a 50%, #ff9a5a 100%); }
+  #sky .night { background: linear-gradient(180deg, #081630 0%, #16295a 60%, #2a3d72 100%); }
+  body.dark #title { color: #fff; }
+
+  #bubble { bottom: auto; top: 84px; }
+  [data-mode=quiz] #replayBtn, [data-mode=talk] #replayBtn { display: block; }
+  [data-mode=learn] #playBtn { display: block; }
+  #playBtn { display: none; }
+  .sr[data-mode=talk].my-turn #micBtn { display: block; }
+  [data-mode=learn] #cards, [data-mode=quiz] #cards { display: flex; }
+  [data-mode=talk].my-turn #hearBtn, [data-mode=talk].my-turn #saidBtn, [data-mode=talk].ended #againBtn { display: block; }
+
+  #cards { flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 1000px; }
+  .gcard { border: none; background: #fff; border-radius: 22px; padding: 6px 12px; min-width: clamp(90px, 13vw, 140px); display: flex; flex-direction: column;
+    align-items: center; box-shadow: 0 5px 0 rgba(0,0,0,.12); transition: transform .1s, opacity .3s; }
+  .gcard:active { transform: translateY(4px); }
+  .gcard b { font-size: clamp(26px, 4vw, 40px); line-height: 1.1; }
+  .gcard span { font-weight: 800; font-size: clamp(12px, 1.6vw, 17px); color: #1a8a8f; white-space: nowrap; }
+  .gcard.wrong { animation: shake .4s; opacity: .4; }
+  .gcard.right { background: #4cc13a; } .gcard.right span { color: #fff; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+
+  .zzz { position: fixed; left: 0; top: 0; font-weight: 800; font-size: 34px; color: #fff; pointer-events: none; display: none; text-shadow: 0 2px 6px rgba(0,0,0,.3); }
+  .zzz.on { display: block; }
+  .zzz span { display: inline-block; animation: zz 2s infinite; }
+  .zzz span:nth-child(2) { animation-delay: .4s; font-size: .8em; } .zzz span:nth-child(3) { animation-delay: .8s; font-size: .6em; }
+  @keyframes zz { 0% { opacity: 0; transform: translate(0, 10px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(20px, -30px); } }
+</style>
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body data-mode="home">
+<div id="sky"><div class="day on"></div><div class="morning"></div><div class="afternoon"></div><div class="evening"></div><div class="night"></div></div>
+<div id="tint"></div>
+
+<div id="top">
+  <button id="homeBtn" class="icon" aria-label="Home">🏠</button>
+  <div id="title"></div>
+  <div id="stars">⭐ <b>0</b></div>
+  <button id="playBtn" class="icon" aria-label="Listen to all">▶</button>
+  <button id="replayBtn" class="icon" aria-label="Listen again">🔊</button>
+  <button id="micBtn" class="icon" aria-label="Speak">🎤</button>
+</div>
+<div id="bubble" class="hidden"></div>
+<div class="zzz" id="zzz"><span>Z</span><span>Z</span><span>Z</span></div>
+
+<div id="bottom">
+  <div id="cards"></div>
+  <button id="hearBtn" class="big alt">🔊 LISTEN</button>
+  <button id="saidBtn" class="big">✅ I SAID IT!</button>
+  <button id="againBtn" class="big">↻ AGAIN</button>
+</div>
+
+<div id="home">
+  <a class="back" href="index.html">← LESSONS</a>
+  <h1 id="logo"></h1>
+  <p>LESSON 2 · GREETINGS</p>
+  <div class="cards">
+    <button class="card" data-go="learn" style="--c:#1e9bf0"><b>🌅</b><strong>LOOK & REPEAT</strong><em>Ascultă și repetă</em></button>
+    <button class="card" data-go="quiz" style="--c:#4cc13a"><b>🤔</b><strong>WHAT DO YOU SAY?</strong><em>Ce spui?</em></button>
+    <button class="card" data-go="talk" style="--c:#ff5c8a;grid-column:1/-1"><b>💬</b><strong>TALK TO YOUR FRIEND</strong><em>Vorbește cu Asha</em></button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {
+  $, rand, wait, pick, shuffle, actx, sfx, say, SR, listen, ui, showBubble, hideBubble, ask, addStar,
+  createStage, setPointer, hitTest, createConfetti, toScreen, tween, RAINBOW,
+} from './shared/common.js';
+import {
+  FRIENDS, makeKid, placeKid, updateKid, kidSay, createSpeech, arrive, makeIsland, makeSun, makeMoon, makeStars, makeCloud, loadAvatar,
+} from './shared/world.js';
+
+$('#logo').innerHTML = [...'HELLO!'].map((ch, i) =>
+  `<span style="color:${['#ff8a1c', '#efb300', '#4cc13a', '#1e9bf0', '#7b3fb5', '#ff7ec1'][i]};animation-delay:${i * .15}s">${ch}</span>`).join('');
+
+const GREETINGS = [
+  { id: 'hello', text: 'Hello!', icon: '🙋', time: 'day' },
+  { id: 'morning', text: 'Good morning!', icon: '🌅', time: 'morning' },
+  { id: 'afternoon', text: 'Good afternoon!', icon: '☀️', time: 'afternoon' },
+  { id: 'evening', text: 'Good evening!', icon: '🌇', time: 'evening' },
+  { id: 'night', text: 'Good night!', icon: '🌙', time: 'night' },
+  { id: 'goodbye', text: 'Goodbye!', icon: '👋', time: 'day' },
+];
+const byG = Object.fromEntries(GREETINGS.map(g => [g.id, g]));
+
+const stage = createStage();
+const { scene, camera } = stage;
+const confetti = createConfetti(scene);
+const speech = createSpeech(camera);
+
+// ---------- world & sky ----------
+const world = new THREE.Group(); world.rotation.x = .2; scene.add(world);
+const island = makeIsland(); world.add(island.group);
+const sunObj = makeSun(); scene.add(sunObj);
+const moon = makeMoon(); scene.add(moon);
+const starField = makeStars(18); scene.add(starField);
+const clouds = [0, 1, 2].map(() => { const c = makeCloud(); scene.add(c); return c; });
+
+const TIMES = {
+  day: { p: .16, moon: 0, stars: 0, hemi: 1.9, dir: 2.3, col: '#ffffff', glow: 0, clouds: 1 },
+  morning: { p: .1, moon: 0, stars: 0, hemi: 1.5, dir: 1.9, col: '#ffcfa0', glow: 0, clouds: 1 },
+  afternoon: { p: .5, moon: 0, stars: 0, hemi: 2.1, dir: 2.6, col: '#ffffff', glow: 0, clouds: 1 },
+  evening: { p: .96, moon: 0, stars: 0, hemi: 1.1, dir: 1.4, col: '#ff9a5a', glow: .9, clouds: .6 },
+  night: { p: 1.15, moon: 1, stars: 1, hemi: .6, dir: .6, col: '#9fb4ff', glow: 1.4, clouds: 0 },
+};
+const sky = { ...TIMES.day, col: new THREE.Color('#ffffff') };
+let timeNow = 'day';
+function setTime(name) {
+  if (name === timeNow) return Promise.resolve();
+  timeNow = name;
+  document.querySelectorAll('#sky div').forEach(d => d.classList.toggle('on', d.classList.contains(name)));
+  document.body.classList.toggle('dark', name === 'night' || name === 'evening');
+  const from = { ...sky, col: sky.col.clone() }, to = TIMES[name], toCol = new THREE.Color(to.col);
+  return tween(1500, t => {
+    for (const k of ['p', 'moon', 'stars', 'hemi', 'dir', 'glow', 'clouds']) sky[k] = from[k] + (to[k] - from[k]) * t;
+    sky.col.lerpColors(from.col, toCol, t);
+  }, t => t * t * (3 - 2 * t));
+}
+function applySky(t) {
+  const { w, h } = stage.dims();
+  const p = sky.p;
+  sunObj.position.set(-w * .42 + p * w * .84, -h * .08 + Math.sin(p * Math.PI) * h * .42, -2.5);
+  sunObj.scale.setScalar(Math.min(1, w / 12) * THREE.MathUtils.clamp(1 - (p - 1) * 6, 0, 1));
+  sunObj.rotation.z = Math.sin(t * .5) * .1;
+  moon.position.set(w * .3, h * .3, -2.5); moon.scale.setScalar(Math.max(.001, sky.moon) * Math.min(1, w / 12));
+  moon.rotation.z = Math.sin(t * .4) * .1;
+  starField.children.forEach(s => { s.scale.setScalar(Math.max(.001, sky.stars) * (.8 + Math.sin(t * 2 + s.userData.phase) * .25)); });
+  stage.hemi.intensity = sky.hemi; stage.sun.intensity = sky.dir; stage.sun.color.copy(sky.col);
+  island.windows.forEach(wn => { wn.material.emissiveIntensity = sky.glow; });
+  clouds.forEach((c, i) => {
+    c.position.set(c.userData.baseX + Math.sin(t * .1 + i * 2) * .8, h * (.33 - (i % 2) * .08), -3);
+    c.scale.setScalar(Math.max(.001, sky.clouds));
+  });
+}
+
+function layout() {
+  const { w, h } = stage.dims();
+  const s = Math.min(1, w / 13, h / 7);
+  world.scale.setScalar(s); world.position.set(0, -h * .2, 0);
+  clouds.forEach((c, i) => { c.userData.baseX = (i - 1) * w * .33; });
+}
+layout();
+stage.onResize = layout;
+
+// ---------- characters ----------
+const mark = makeKid(FRIENDS.mark); mark.userData.speed = 3.2; world.add(mark); placeKid(mark, 0, 0, 1);
+const asha = makeKid(FRIENDS.asha); world.add(asha); placeKid(asha, -9, 0, 1);
+let me = null;
+const zzz = $('#zzz');
+function setSleep(k, on) { k.userData.sleep = on; zzz.classList.toggle('on', on); zzz.owner = on ? k : null; }
+
+// ---------- modes ----------
+let mode = 'home', token = 0, busy = false;
+const TITLES = { learn: 'LOOK, LISTEN AND REPEAT', quiz: 'WHAT DO YOU SAY?', talk: 'TALK TO YOUR FRIEND' };
+function setMode(m) {
+  mode = m; token++; busy = false;
+  document.body.dataset.mode = m; document.body.classList.remove('my-turn', 'ended');
+  speechSynthesis.cancel(); hideBubble(); speech.hide();
+  $('#title').textContent = TITLES[m] || '';
+  setSleep(mark, false);
+  setTime('day');
+  mark.userData.tWave = 0; mark.userData.look = 0; mark.userData.tBoth = 0;
+  if (me) { world.remove(me); me = null; }
+  if (m === 'talk') { placeKid(mark, 9, 0, 1); startTalk(); }
+  else { mark.userData.tPos.set(0, 0, 1); asha.userData.tPos.set(-9, 0, 1); }
+  if (m === 'learn') { renderCards(GREETINGS, learnPick); ask('Look, listen and repeat!', '👆 TAP A CARD!'); }
+  if (m === 'quiz') quizRound();
+}
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { actx().resume(); sfx.pop(); setMode(b.dataset.go); });
+$('#homeBtn').onclick = () => { sfx.pop(); setMode('home'); };
+$('#replayBtn').onclick = () => { if (ui.lastPrompt) say(ui.lastPrompt); };
+
+function renderCards(list, onPick) {
+  const box = $('#cards'); box.innerHTML = '';
+  list.forEach(g => {
+    const b = document.createElement('button');
+    b.className = 'gcard'; b.innerHTML = `<b>${g.icon}</b><span>${g.text.toUpperCase()}</span>`;
+    b.onclick = () => { actx().resume(); onPick(g, b); };
+    box.appendChild(b);
+  });
+}
+
+// Plays one greeting as a little scene: sky changes, Mark acts it out and says it.
+async function act(g, tk) {
+  const u = mark.userData;
+  setSleep(mark, false);
+  if (u.pos.distanceTo(new THREE.Vector3(0, 0, 1)) > .1 || g.id === 'hello') {
+    if (g.id === 'hello') placeKid(mark, -8, 0, 1);
+    u.tPos.set(0, 0, 1);
+    setTime(g.time);
+    await arrive(mark);
+  } else await setTime(g.time);
+  if (tk !== token) return;
+  if (g.id === 'morning') { u.tBoth = 1; await wait(900); u.tBoth = 0; }
+  await kidSay(mark, g.text, { bubble: speech });
+  if (tk !== token) return;
+  if (g.id === 'night') setSleep(mark, true);
+  if (g.id === 'goodbye') { u.tWave = 1; u.tPos.set(8, 0, 1); await wait(900); u.tWave = 0; }
+}
+
+// --- 1. look, listen and repeat ---
+async function learnPick(g) {
+  if (busy) return;
+  busy = true;
+  const tk = token;
+  hideBubble(); sfx.pop();
+  await act(g, tk);
+  if (tk === token) showBubble(`🗣️ NOW YOU!<small>${g.text.toUpperCase()}</small>`);
+  busy = false;
+}
+$('#playBtn').onclick = async () => {
+  if (busy) return;
+  busy = true;
+  const tk = token;
+  for (const g of GREETINGS) {
+    if (tk !== token) break;
+    hideBubble();
+    await act(g, tk);
+    if (tk !== token) break;
+    showBubble(`🗣️ NOW YOU!<small>${g.text.toUpperCase()}</small>`);
+    await wait(1600);
+  }
+  if (tk === token) { setTime('day'); addStar(); sfx.win(); showBubble('⭐ SUPER! ⭐'); }
+  busy = false;
+};
+
+// --- 2. what do you say? ---
+const DISTRACT = {
+  hello: ['goodbye', 'night'], goodbye: ['hello', 'morning'],
+  morning: ['afternoon', 'evening', 'night'], afternoon: ['morning', 'evening', 'night'],
+  evening: ['morning', 'afternoon', 'night'], night: ['morning', 'afternoon', 'evening'],
+};
+let quizG = null, quizLocked = false;
+async function quizRound() {
+  const tk = token, u = mark.userData;
+  quizLocked = true; hideBubble(); $('#cards').innerHTML = '';
+  quizG = pick(GREETINGS.filter(g => g !== quizG));
+  setSleep(mark, false); u.tWave = 0;
+  if (quizG.id === 'hello') { placeKid(mark, -8, 0, 1); u.tPos.set(0, 0, 1); await setTime('day'); await arrive(mark); }
+  else if (quizG.id === 'goodbye') { u.tPos.set(0, 0, 1); await setTime('day'); await arrive(mark); u.tWave = 1; u.look = 0; }
+  else { u.tPos.set(0, 0, 1); await setTime(quizG.time); await arrive(mark); if (quizG.id === 'night') { u.tBoth = 1; await wait(700); u.tBoth = 0; } }
+  if (tk !== token) return;
+  const opts = shuffle([quizG, ...shuffle(DISTRACT[quizG.id]).slice(0, 2).map(id => byG[id])]);
+  renderCards(opts, quizPick);
+  quizLocked = false;
+  ask('What do you say?', '🤔 WHAT DO YOU SAY?');
+}
+async function quizPick(g, card) {
+  if (quizLocked) return;
+  const tk = token, u = mark.userData;
+  if (g === quizG) {
+    quizLocked = true; card.classList.add('right'); sfx.win(); addStar();
+    await say(g.text, .85, 1.25);
+    if (tk !== token) return;
+    confetti.burst(new THREE.Vector3(0, 1, 2), RAINBOW, 70);
+    u.tWave = 0; mark.userData.jump.v = 4;
+    await kidSay(mark, g.text, { bubble: speech });
+    if (g.id === 'night') setSleep(mark, true);
+    if (g.id === 'goodbye') { u.tPos.set(8, 0, 1); await arrive(mark, 3000); }
+    await wait(700);
+    if (tk === token) quizRound();
+  } else {
+    card.classList.add('wrong'); sfx.nope();
+    await say(g.text, .85, 1.25);
+    if (tk !== token) return;
+    u.shy = 1;
+    await kidSay(mark, 'Hmm… no!', { bubble: speech, wave: false });
+  }
+}
+
+// --- 3. talk to your friend (exercise 2) ---
+let script = [], step = 0;
+async function startTalk() {
+  const tk = token;
+  const av = loadAvatar();
+  me = makeKid(av); world.add(me);
+  placeKid(me, 9, 0, 1); me.userData.tPos.set(1.6, 0, 1); me.userData.speed = 3.2; me.userData.look = -.5;
+  placeKid(asha, -9, 0, 1); asha.userData.tPos.set(-1.6, 0, 1); asha.userData.speed = 3.2; asha.userData.look = .5;
+  script = [
+    ['asha', `Hello! My name is Asha. What's your name?`],
+    ['me', `Hi, my name is ${av.name}. How are you?`],
+    ['asha', `I'm fine! And how are you?`],
+    ['me', `I'm fine, thank you!`],
+    ['asha', 'Goodbye!'],
+    ['me', 'Goodbye!'],
+  ];
+  step = 0;
+  showBubble('💬 …');
+  await Promise.all([arrive(me), arrive(asha)]);
+  if (tk === token) runTalk();
+}
+async function runTalk() {
+  const tk = token;
+  document.body.classList.remove('my-turn');
+  while (step < script.length && tk === token) {
+    const [who, line] = script[step];
+    if (who === 'asha') {
+      hideBubble();
+      await kidSay(asha, line, { bubble: speech });
+      step++;
+      await wait(300);
+    } else {
+      speech.show(me, line); me.userData.tWave = 1;
+      ask('Your turn!', '🗣️ YOUR TURN!');
+      ui.lastPrompt = line;
+      document.body.classList.add('my-turn');
+      return;
+    }
+  }
+  if (tk !== token) return;
+  // Dialogue finished: both wave, Asha walks home.
+  sfx.fanfare(); addStar(2);
+  for (let i = 0; i < 3; i++) setTimeout(() => confetti.burst(new THREE.Vector3((rand() - .5) * 5, 1, 1.5), RAINBOW, 80), i * 250);
+  showBubble('⭐ WELL DONE! ⭐');
+  asha.userData.tWave = 1; me.userData.tWave = 1;
+  await wait(1200);
+  asha.userData.tPos.set(-9, 0, 1);
+  await wait(1500);
+  if (tk !== token) return;
+  me.userData.tWave = 0; asha.userData.tWave = 0;
+  document.body.classList.add('ended');
+}
+function myLineDone(good) {
+  if (!document.body.classList.contains('my-turn')) return;
+  document.body.classList.remove('my-turn');
+  me.userData.tWave = 0; me.userData.jump.v = 4;
+  if (good) { sfx.win(); addStar(); }
+  speech.hideLater(me, 600);
+  step++;
+  setTimeout(runTalk, 700);
+}
+$('#hearBtn').onclick = () => { sfx.pop(); kidSay(me, script[step][1], { bubble: speech }); };
+$('#saidBtn').onclick = () => { actx().resume(); myLineDone(true); };
+$('#againBtn').onclick = () => { sfx.pop(); setMode('talk'); };
+let listening = false;
+$('#micBtn').onclick = async () => {
+  if (listening || !SR) return;
+  listening = true; speechSynthesis.cancel(); $('#micBtn').classList.add('on');
+  const tk = token, line = script[step][1];
+  const heard = (await listen()).join(' ');
+  listening = false; $('#micBtn').classList.remove('on');
+  if (tk !== token) return;
+  const words = line.toLowerCase().replace(/[^a-z' ]/g, '').split(' ').filter(w => w.length > 2);
+  const hit = words.filter(w => heard.includes(w)).length;
+  if (words.length && hit / words.length >= .4) myLineDone(true);
+  else { sfx.nope(); showBubble('🤔 TRY AGAIN!'); say('Try again!'); }
+};
+
+// ---------- input ----------
+stage.renderer.domElement.addEventListener('pointerdown', e => {
+  actx().resume(); setPointer(e);
+  const k = hitTest(camera, [mark, asha, me].filter(Boolean), 'kid');
+  if (!k || busy) return;
+  k.userData.jump.v = 3; sfx.pop();
+  if (k === me && document.body.classList.contains('my-turn')) kidSay(me, script[step][1], { bubble: speech });
+  else if (mode === 'home' || mode === 'learn') { setSleep(k, false); kidSay(k, 'Hello!', { bubble: speech }); }
+});
+
+// ---------- loop ----------
+let nextWave = 2;
+stage.loop((dt, t) => {
+  if (mode === 'home' && t > nextWave) {
+    mark.userData.tWave = 1; setTimeout(() => { mark.userData.tWave = 0; }, 1400);
+    nextWave = t + 3 + rand() * 2;
+  }
+  [mark, asha, me].filter(Boolean).forEach(k => updateKid(k, dt, t));
+  applySky(t);
+  if (zzz.owner) {
+    zzz.owner.updateWorldMatrix(true, false);
+    const p = toScreen(camera, new THREE.Vector3(.4, 2.6, 0).applyMatrix4(zzz.owner.matrixWorld));
+    zzz.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  }
+  speech.update();
+  confetti.update(dt);
+});
+</script>
+</body>
+</html>

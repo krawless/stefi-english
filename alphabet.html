@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>The Alphabet 3D – Lesson 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/common.css">
+<style>
+  [data-mode=pop] #replayBtn, [data-mode=match] #replayBtn, [data-mode=name] #replayBtn { display: block; }
+  [data-mode=pop] #bubble, [data-mode=name] #bubble { bottom: auto; top: 84px; }
+  [data-mode=match] #bubble { bottom: 24px; }
+  [data-mode=abc] #listenBtn { display: block; }
+  [data-mode=name].show-turn #turnBtn, [data-mode=name].show-turn #newNameBtn { display: block; }
+  #bubble b { color: #ff5c8a; }
+  #bubble .done { color: #4cc13a; }
+  #bubble .next { color: #ff5c8a; text-decoration: underline; text-underline-offset: 6px; }
+  #bubble .todo { color: #c3ccd3; }
+
+  #namePanel { position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); display: none; flex-direction: column; align-items: center; gap: 16px;
+    background: #fff; border: 4px solid var(--teal); border-radius: 36px; padding: 26px 30px; box-shadow: 0 8px 0 rgba(0,0,0,.08); }
+  [data-mode=name].ask-name #namePanel { display: flex; }
+  #namePanel .q { font-size: clamp(24px, 4vw, 40px); font-weight: 800; }
+  #namePanel .row { display: flex; gap: 12px; align-items: center; }
+  #nameInput { font-family: inherit; font-weight: 800; font-size: clamp(30px, 5vw, 52px); letter-spacing: .12em; text-transform: uppercase; text-align: center;
+    width: min(420px, 60vw); padding: 4px 16px; border-radius: 22px; border: 4px solid #d7e3ea; color: #1a8a8f; outline: none; user-select: text; -webkit-user-select: text; }
+  #nameInput:focus { border-color: var(--teal); }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 800; color: #1a8a8f; }
+</style>
+<script type="importmap">{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }</script>
+</head>
+<body data-mode="loading">
+<div id="tint"></div>
+<div id="loading">🔤 …</div>
+
+<div id="top">
+  <button id="homeBtn" class="icon" aria-label="Home">🏠</button>
+  <div id="title"></div>
+  <div id="stars">⭐ <b>0</b></div>
+  <button id="replayBtn" class="icon" aria-label="Listen again">🔊</button>
+</div>
+<div id="bubble" class="hidden"></div>
+
+<div id="namePanel">
+  <div class="q">WHAT'S YOUR NAME?</div>
+  <div class="row">
+    <input id="nameInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <button id="goBtn" class="big">▶</button>
+  </div>
+</div>
+
+<div id="bottom">
+  <button id="listenBtn" class="big">▶ LISTEN AND SAY</button>
+  <button id="turnBtn" class="big">🧩 YOUR TURN!</button>
+  <button id="newNameBtn" class="big alt">✏️ NEW NAME</button>
+</div>
+
+<div id="home">
+  <a class="back" href="index.html">← LESSONS</a>
+  <h1 id="logo"></h1>
+  <p>LESSON 3 · THE ALPHABET</p>
+  <div class="cards">
+    <button class="card" data-go="abc" style="--c:#1e9bf0"><b>🔤</b><strong>LOOK & SAY</strong><em>Ascultă și spune</em></button>
+    <button class="card" data-go="pop" style="--c:#e8262b"><b>🎈</b><strong>POP THE LETTER</strong><em>Sparge balonul cu litera</em></button>
+    <button class="card" data-go="match" style="--c:#4cc13a"><b>🖼️</b><strong>WHAT LETTER?</strong><em>Ce literă e?</em></button>
+    <button class="card" data-go="name" style="--c:#7b3fb5"><b>✏️</b><strong>SPELL YOUR NAME</strong><em>Spune-ți numele pe litere</em></button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {
+  $, rand, wait, cap, pick, shuffle, easeOutBounce, byId, RAINBOW, actx, sfx, say, ui, showBubble, hideBubble, ask, addStar,
+  createStage, SPH, CONE, mat, M, WHITE_M, pointer, setPointer, hitTest, tween, createConfetti,
+} from './shared/common.js';
+
+// ---------- lesson content (page 12) ----------
+const BLOCK_COLOURS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'].map(id => byId[id]);
+const ABC = [
+  ['A', 'apple', '🍎'], ['B', 'bee', '🐝'], ['C', 'cat', '🐱'], ['D', 'dog', '🐶'], ['E', 'elephant', '🐘'], ['F', 'flower', '🌸'],
+  ['G', 'giraffe', '🦒'], ['H', 'horse', '🐴'], ['I', 'ice cream', '🍦'], ['J', 'jeans', '👖'], ['K', 'koala', '🐨'], ['L', 'lemon', '🍋'],
+  ['M', 'mouse', '🐭'], ['N', 'numbers', null], ['O', 'orange', '🍊'], ['P', 'pig', '🐷'], ['Q', 'queen', '👸'], ['R', 'robot', '🤖'],
+  ['S', 'sun', '☀️'], ['T', 'tree', '🌳'], ['U', 'umbrella', '☂️'], ['V', 'violin', '🎻'], ['W', 'whale', '🐳'], ['X', 'xylophone', null],
+  ['Y', 'yo-yo', '🪀'], ['Z', 'zebra', '🦓'],
+].map(([L, word, emoji], i) => ({ L, word, emoji, colour: BLOCK_COLOURS[i % 7] }));
+const byLetter = Object.fromEntries(ABC.map(it => [it.L, it]));
+
+$('#logo').innerHTML = [...'ABC'].map((ch, i) =>
+  `<span style="color:${BLOCK_COLOURS[i * 2].css};animation-delay:${i * .2}s">${ch}</span>`).join('');
+
+const [font] = await Promise.all([
+  new FontLoader().loadAsync('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json'),
+  document.fonts.load('800 40px "Baloo 2"'),
+]);
+$('#loading').remove();
+
+const stage = createStage();
+const { scene, camera } = stage;
+const confetti = createConfetti(scene);
+
+// ---------- 3D letters & pictures ----------
+const letterGeos = {};
+function letterGeo(L) {
+  if (letterGeos[L]) return letterGeos[L];
+  const g = new TextGeometry(L, { font, size: .62, height: .14, curveSegments: 10, bevelEnabled: true, bevelThickness: .04, bevelSize: .025, bevelSegments: 4 });
+  g.computeBoundingBox();
+  const b = g.boundingBox;
+  g.translate(-(b.min.x + b.max.x) / 2, -(b.min.y + b.max.y) / 2, -b.min.z);
+  return (letterGeos[L] = g);
+}
+
+// Pictures without a good emoji are drawn like in the book.
+const DRAW = {
+  N(x) {
+    x.font = '800 110px "Baloo 2"'; x.lineWidth = 12; x.strokeStyle = '#fff';
+    [['1', '#3cc3c8', 82, 95, -14], ['2', '#ff8a1c', 170, 88, 12], ['3', '#ff7ec1', 122, 150, -6]].forEach(([n, c, px, py, r]) => {
+      x.save(); x.translate(px, py); x.rotate(r * Math.PI / 180);
+      x.strokeText(n, 0, 0); x.fillStyle = c; x.fillText(n, 0, 0); x.restore();
+    });
+  },
+  X(x) {
+    const cols = ['#e8262b', '#ff8a1c', '#ffd60a', '#4cc13a', '#1e9bf0', '#7b3fb5'];
+    x.save(); x.translate(128, 112); x.rotate(-.18);
+    x.fillStyle = '#b5723a'; x.fillRect(-100, -30, 200, 10); x.fillRect(-100, 22, 200, 10);
+    cols.forEach((c, i) => {
+      const bx = -92 + i * 31, hh = 104 - i * 10;
+      x.fillStyle = c; x.beginPath(); x.roundRect(bx, -hh / 2, 24, hh, 7); x.fill();
+      x.fillStyle = 'rgba(255,255,255,.8)'; x.beginPath(); x.arc(bx + 12, -25, 3.5, 0, 7); x.arc(bx + 12, 27, 3.5, 0, 7); x.fill();
+    });
+    x.restore();
+    x.strokeStyle = '#c68a4a'; x.lineWidth = 6; x.lineCap = 'round';
+    x.beginPath(); x.moveTo(150, 175); x.lineTo(215, 120); x.moveTo(170, 180); x.lineTo(230, 140); x.stroke();
+    x.fillStyle = '#e8262b'; x.beginPath(); x.arc(215, 120, 9, 0, 7); x.arc(230, 140, 9, 0, 7); x.fill();
+  },
+};
+const picMats = {};
+// withWord=false hides the word (and the colour hint), so quizzes don't give the answer away.
+function picMat(item, withWord = true) {
+  const key = item.L + (withWord ? '+' : '-');
+  if (picMats[key]) return picMats[key];
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.beginPath(); x.roundRect(6, 6, 244, 244, 44); x.fill();
+  x.lineWidth = 10; x.strokeStyle = withWord ? item.colour.css : '#3cc3c8'; x.stroke();
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  if (!withWord) { x.translate(128, 128); x.scale(1.2, 1.2); x.translate(-128, -110); }
+  if (item.emoji) { x.font = '140px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.fillText(item.emoji, 128, 112); }
+  else DRAW[item.L](x);
+  if (withWord) {
+    const label = item.word.toUpperCase();
+    let fs = 40; x.font = `800 ${fs}px "Baloo 2"`;
+    while (x.measureText(label).width > 210) { fs -= 2; x.font = `800 ${fs}px "Baloo 2"`; }
+    x.fillStyle = item.colour.text; x.fillText(label, 128, 216);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return (picMats[key] = new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+}
+
+// ---------- toy blocks (letter in front, picture on the back) ----------
+const BLOCK_GEO = new RoundedBoxGeometry(1, 1, 1, 5, .14);
+const CARD_GEO = new RoundedBoxGeometry(1, 1, .14, 4, .06);
+const PIC_GEO = new THREE.PlaneGeometry(.86, .86);
+const LETTER_LIGHT = mat(0xffffff, .3), LETTER_DARK = mat(0x1e9bf0, .3);
+const blockMats = {};
+const motion = () => ({ cur: new THREE.Vector3(0, -8, 0), tPos: new THREE.Vector3(), scale: .01, tScale: 1,
+  sq: { x: 0, v: 0 }, jump: { y: 0, v: 0 }, wig: 0, flip: 0, tFlip: 0, phase: rand() * 6 });
+function makeBlock(item) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(BLOCK_GEO, blockMats[item.colour.id] ||= mat(item.colour.hex, .35));
+  body.castShadow = true; g.add(body);
+  const letter = new THREE.Mesh(letterGeo(item.L), item.colour.id === 'yellow' ? LETTER_DARK : LETTER_LIGHT);
+  letter.position.z = .46; g.add(letter);
+  const pic = new THREE.Mesh(PIC_GEO, picMat(item));
+  pic.position.z = -.506; pic.rotation.y = Math.PI; g.add(pic);
+  g.userData = { item, ...motion() };
+  return g;
+}
+function makeCard(item) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(CARD_GEO, WHITE_M));
+  for (const side of [1, -1]) {
+    const p = new THREE.Mesh(PIC_GEO, picMat(item, false));
+    p.userData.pic = true; p.scale.setScalar(1.1); p.position.z = .076 * side; if (side < 0) p.rotation.y = Math.PI; g.add(p);
+  }
+  g.userData = { card: true, item, ...motion() };
+  return g;
+}
+function poke(o, big = 1) { o.userData.sq.v = 7 * big; o.userData.jump.v = 4.5 * big; sfx.pop(); }
+function animateToy(o, dt, t, tilt = 1) {
+  const u = o.userData;
+  u.cur.lerp(u.tPos, 1 - Math.exp(-dt * 5));
+  u.scale += (u.tScale - u.scale) * (1 - Math.exp(-dt * 6));
+  u.sq.v += (-160 * u.sq.x - 9 * u.sq.v) * dt; u.sq.x += u.sq.v * dt;
+  u.jump.v -= 22 * dt; u.jump.y += u.jump.v * dt;
+  if (u.jump.y < 0) { u.jump.y = 0; u.jump.v = 0; }
+  u.wig = Math.max(0, u.wig - dt * 1.4);
+  u.flip += (u.tFlip - u.flip) * (1 - Math.exp(-dt * 7));
+  const s = u.scale, q = THREE.MathUtils.clamp(u.sq.x * .06, -.3, .3);
+  o.position.set(u.cur.x, u.cur.y + (Math.sin(t * 2 + u.phase) * .04 + u.jump.y) * s, u.cur.z);
+  o.scale.set(s * (1 - q * .6), s * (1 + q), s * (1 - q * .6));
+  o.rotation.set(-pointer.y * .15 * tilt, u.flip * Math.PI + (pointer.x * .3 + Math.sin(t * .7 + u.phase) * .12) * tilt,
+    Math.sin(t * 1.3 + u.phase) * .04 + Math.sin(t * 30) * .3 * u.wig);
+}
+// Layout helper: usable world area between the top bar and the bottom UI.
+function area(top, bot) {
+  const { h, w, px } = stage.dims();
+  return { w, h, uh: h - (top + bot) * px, cy: (bot - top) / 2 * px };
+}
+
+// ---------- groups ----------
+const abcGroup = new THREE.Group(), popGroup = new THREE.Group(), matchGroup = new THREE.Group(), nameGroup = new THREE.Group();
+scene.add(abcGroup, popGroup, matchGroup, nameGroup);
+const abcBlocks = ABC.map(it => { const b = makeBlock(it); abcGroup.add(b); return b; });
+
+// ---------- modes ----------
+let mode = 'home', token = 0;
+const TITLES = { abc: 'LOOK, LISTEN AND SAY', pop: 'LISTEN AND POP', match: 'WHAT LETTER?', name: 'SPELL YOUR NAME' };
+function setMode(m) {
+  mode = m; token++;
+  document.body.dataset.mode = m; document.body.classList.remove('ask-name', 'show-turn');
+  speechSynthesis.cancel(); hideBubble();
+  $('#title').textContent = TITLES[m] || '';
+  abcGroup.visible = m === 'home' || m === 'abc';
+  popGroup.visible = m === 'pop'; matchGroup.visible = m === 'match'; nameGroup.visible = m === 'name';
+  abcBlocks.forEach(b => { b.userData.tFlip = 0; });
+  if (m === 'abc') { layoutAbc(); ask('Look, listen and say!', '👆 TAP A LETTER!'); }
+  if (m === 'pop') startPop(); else popGroup.clear();
+  if (m === 'match') matchRound(); else matchGroup.clear();
+  if (m === 'name') startName(); else nameGroup.clear();
+}
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { actx().resume(); sfx.pop(); setMode(b.dataset.go); });
+$('#homeBtn').onclick = () => { sfx.pop(); setMode('home'); };
+$('#replayBtn').onclick = () => { if (ui.lastPrompt) say(ui.lastPrompt); };
+
+// --- 1. look, listen and say ---
+function layoutAbc() {
+  const { w, uh, cy } = area(84, 170), n = abcBlocks.length, a = camera.aspect;
+  const cols = a > 1.5 ? 7 : a > 1.1 ? 6 : a > .8 ? 5 : 4, rows = Math.ceil(n / cols);
+  const cell = Math.min(w * .94 / cols, uh / rows);
+  abcBlocks.forEach((b, i) => {
+    const r = Math.floor(i / cols), c = i % cols, inRow = r === rows - 1 ? n - r * cols : cols;
+    b.userData.tPos.set((c - (inRow - 1) / 2) * cell, cy + ((rows - 1) / 2 - r) * cell, 0);
+    b.userData.tScale = cell * .7;
+  });
+}
+function showLetter(b, speak = true) {
+  const u = b.userData, it = u.item;
+  poke(b); u.tFlip = 1;
+  clearTimeout(u.flipTimer); u.flipTimer = setTimeout(() => { u.tFlip = 0; }, 2600);
+  showBubble(`<span style="color:${it.colour.text}">${it.L}</span> · ${it.word.toUpperCase()}`);
+  return speak ? say(`${it.L}. ${it.word}.`) : null;
+}
+let seqRunning = false;
+$('#listenBtn').onclick = async () => {
+  if (seqRunning) return;
+  seqRunning = true; $('#listenBtn').disabled = true;
+  const tk = token;
+  for (const b of abcBlocks) {
+    if (tk !== token) break;
+    await showLetter(b);
+    if (tk !== token) break;
+    showBubble(`<span style="color:${b.userData.item.colour.text}">${b.userData.item.L}</span> · ${b.userData.item.word.toUpperCase()}<small>🗣️ NOW YOU!</small>`);
+    await wait(1400);
+  }
+  if (tk === token) { sfx.fanfare(); confetti.burst(new THREE.Vector3(0, 0, 1), RAINBOW, 150); addStar(2); showBubble('⭐ SUPER! ⭐'); say('Super! You know the alphabet!'); }
+  seqRunning = false; $('#listenBtn').disabled = false;
+};
+
+// --- 2. pop the letter balloons ---
+let popTarget = null, popMiss = 0, popLocked = false;
+const balloonMats = {};
+function makeBalloon(item) {
+  const g = new THREE.Group();
+  const m = balloonMats[item.colour.id] ||= new THREE.MeshStandardMaterial({ color: item.colour.hex, roughness: .15, metalness: .05 });
+  M(SPH, m, [0, 0, 0], [.6, .72, .6], g);
+  M(CONE, m, [0, -.76, 0], [.1, .12, .1], g).rotation.x = Math.PI;
+  const pts = []; for (let i = 0; i <= 14; i++) pts.push(new THREE.Vector3(Math.sin(i * .9) * .05, -.82 - i * .1, 0));
+  g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x8a8f99 })));
+  M(letterGeo(item.L), item.colour.id === 'yellow' ? LETTER_DARK : LETTER_LIGHT, [0, .04, .5], [1.05, 1.05, 1.05], g);
+  g.userData = { balloon: true, item, speed: .45 + rand() * .25, phase: rand() * 6, baseX: 0, wig: 0, popped: false, s: 1 };
+  return g;
+}
+const liveBalloons = () => popGroup.children.filter(o => !o.userData.popped);
+function freeLetter() {
+  const used = new Set(popGroup.children.map(o => o.userData.item.L));
+  return pick(ABC.filter(i => !used.has(i.L))).L;
+}
+function spawnBalloon(L, y) {
+  const { w, h } = stage.dims(), s = Math.min(1, w / 6.5, h / 6);
+  y ??= -h / 2 - 1.4 * s;
+  let best = 0, bestD = -1;
+  for (let k = 0; k < 12; k++) {
+    const x = (rand() - .5) * (w - 1.8 * s);
+    const d = Math.min(99, ...liveBalloons().map(o => Math.hypot(o.userData.baseX - x, (o.position.y - y) * .5)));
+    if (d > bestD) { bestD = d; best = x; }
+  }
+  const b = makeBalloon(byLetter[L]);
+  Object.assign(b.userData, { s, baseX: best });
+  b.position.set(best, y, 0); b.scale.setScalar(s);
+  popGroup.add(b);
+  return b;
+}
+function startPop() {
+  popGroup.clear(); popTarget = null;
+  const { w, h } = stage.dims(), n = w > 9 ? 6 : 4;
+  for (let i = 0; i < n; i++) spawnBalloon(freeLetter(), -h / 2 + (i / n) * h * .75 - .3);
+  newPopTarget();
+}
+function newPopTarget() {
+  const { h } = stage.dims();
+  const cand = liveBalloons().filter(o => o.position.y < h / 2 - 2 && o.userData.item.L !== popTarget);
+  popTarget = cand.length ? pick(cand).userData.item.L : freeLetter();
+  if (!cand.length) spawnBalloon(popTarget);
+  popMiss = 0; popLocked = false;
+  ask(`Find the letter ${popTarget}!`, '🎈 POP THE LETTER… 🔊');
+}
+async function popTap(b) {
+  if (popLocked || b.userData.popped) return;
+  const L = b.userData.item.L, tk = token;
+  if (L === popTarget) {
+    popLocked = true; b.userData.popped = true; sfx.bang();
+    confetti.burst(b.position.clone(), [b.userData.item.colour.hex, 0xffffff, 0xffd60a], 80, .8);
+    const s0 = b.scale.x;
+    await tween(110, t => b.scale.setScalar(s0 * (1 + t * .5)));
+    popGroup.remove(b);
+    addStar(); showBubble(`🎉 ${L}!`);
+    await say(`Yes! ${L}!`);
+    if (tk !== token) return;
+    spawnBalloon(freeLetter()); newPopTarget();
+  } else {
+    b.userData.wig = 1; sfx.nope(); popMiss++;
+    showBubble(popMiss >= 2 ? `🎈 FIND <b>${popTarget}</b>!` : `${L}? 🙈`);
+    await say(`This is ${L}. Find the letter ${popTarget}!`);
+  }
+}
+function updateBalloons(dt, t) {
+  if (!popGroup.visible) return;
+  const { h } = stage.dims();
+  for (const b of [...popGroup.children]) {
+    const u = b.userData;
+    if (u.popped) continue;
+    b.position.y += u.speed * u.s * dt;
+    b.position.x = u.baseX + Math.sin(t * .9 + u.phase) * .25 * u.s;
+    u.wig = Math.max(0, u.wig - dt * 1.4);
+    b.rotation.set(0, 0, Math.sin(t * 1.1 + u.phase) * .1 + Math.sin(t * 30) * .3 * u.wig);
+    if (b.position.y > h / 2 + 1.4 * u.s) {
+      popGroup.remove(b);
+      spawnBalloon(u.item.L === popTarget ? popTarget : freeLetter());
+    }
+  }
+}
+
+// --- 3. what letter? (picture -> letter) ---
+let matchItem = null, matchLocked = false, matchStreak = 0, card = null, options = [];
+const matchArea = () => { const a = area(84, 110); return { ...a, cs: Math.min(a.uh * .46, a.w * .42), bs: Math.min(a.uh * .24, a.w / 5) }; };
+function placeMatch() {
+  const a = matchArea();
+  if (card) { card.userData.tPos.set(0, a.cy + a.uh * .2, 0); card.userData.tScale = a.cs; }
+  options.forEach((b, i) => {
+    if (b.userData.done) return;
+    b.userData.tPos.set((i - 1) * a.bs * 1.6, a.cy - a.uh * .3, 0); b.userData.tScale = a.bs;
+  });
+}
+async function matchRound() {
+  const tk = token;
+  matchGroup.clear();
+  matchItem = pick(ABC.filter(i => i !== matchItem));
+  const others = shuffle(ABC.filter(i => i !== matchItem)).slice(0, 2);
+  card = makeCard(matchItem); card.userData.cur.set(0, 8, 0);
+  options = shuffle([matchItem, ...others]).map(it => { const b = makeBlock(it); b.userData.option = true; return b; });
+  matchGroup.add(card, ...options);
+  placeMatch(); matchLocked = false;
+  await wait(300);
+  if (tk !== token) return;
+  // The word is only a hint: 🔊 and wrong answers say it, the first question doesn't.
+  ask('Which letter?', '🤔 WHICH LETTER?<small>🔊 HELP</small>');
+  ui.lastPrompt = `${cap(matchItem.word)}! Which letter?`;
+}
+async function matchTap(b) {
+  if (matchLocked) return;
+  const it = b.userData.item, tk = token;
+  if (it === matchItem) {
+    matchLocked = true; b.userData.done = true;
+    card.children.filter(o => o.userData.pic).forEach(o => { o.material = picMat(it); });
+    const a = matchArea(), cardY = a.cy + a.uh * .2;
+    b.userData.tPos.set(-a.cs * .55, cardY - a.cs * .4, .8); b.userData.tScale = a.bs * .9;
+    poke(b, 1.2); sfx.win(); addStar(); matchStreak++;
+    confetti.burst(new THREE.Vector3(0, cardY, 1), [it.colour.hex, 0xffd60a, 0xffffff], 90);
+    showBubble(`✅ <span style="color:${it.colour.text}">${it.L}</span> · ${it.word.toUpperCase()}`);
+    await say(`Yes! ${it.L} for ${it.word}!`);
+    if (tk !== token) return;
+    if (matchStreak % 5 === 0) {
+      sfx.fanfare(); addStar(2);
+      for (let i = 0; i < 3; i++) setTimeout(() => confetti.burst(new THREE.Vector3((rand() - .5) * 6, 1, 1), RAINBOW, 80), i * 250);
+      showBubble('⭐ SUPER STAR! ⭐'); await say('Super star!');
+    }
+    await wait(500);
+    if (tk === token) matchRound();
+  } else {
+    b.userData.wig = 1; sfx.nope();
+    showBubble(`${it.L}? 🙈`);
+    await say(`No, this is ${it.L}. ${cap(matchItem.word)}!`);
+  }
+}
+
+// --- 4. spell your name ---
+let letters = [], nameBlocks = [], nextIdx = 0, nameState = '';
+const nameInput = $('#nameInput');
+const cleanName = v => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10);
+const niceName = () => cap(letters.join('').toLowerCase());
+function nameArea() {
+  const a = area(160, 100), n = Math.max(letters.length, 1);
+  const bs = Math.min(1.3, a.w * .92 / (n * 1.3), a.uh / 3.6);
+  return { ...a, bs, gap: bs * 1.3, rowY: a.cy + a.uh * .2, scrY: a.cy - a.uh * .25 };
+}
+const slotPos = i => { const a = nameArea(); return new THREE.Vector3((i - (letters.length - 1) / 2) * a.gap, a.rowY, 0); };
+function startName() {
+  nameGroup.clear(); nameState = 'ask'; nameBlocks = []; letters = [];
+  document.body.classList.add('ask-name');
+  nameInput.value = localStorage.getItem('stefi-name') || 'STEFI';
+  say("What's your name?"); ui.lastPrompt = "What's your name?";
+}
+async function goName() {
+  const n = cleanName(nameInput.value);
+  if (!n) { sfx.nope(); nameInput.focus(); return; }
+  localStorage.setItem('stefi-name', n);
+  nameInput.blur(); actx().resume(); sfx.pop();
+  document.body.classList.remove('ask-name');
+  spellName(n);
+}
+$('#goBtn').onclick = goName;
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') goName(); });
+$('#newNameBtn').onclick = () => { sfx.pop(); document.body.classList.remove('show-turn'); hideBubble(); startName(); };
+async function spellName(n) {
+  const tk = token;
+  nameGroup.clear(); letters = [...n]; nameState = 'drop';
+  const a = nameArea();
+  nameBlocks = letters.map((ch, i) => {
+    const b = makeBlock(byLetter[ch]), p = slotPos(i);
+    b.userData.cur.set(p.x, a.rowY + 7, 0); b.userData.tPos.copy(b.userData.cur);
+    b.userData.scale = b.userData.tScale = a.bs; b.visible = false;
+    nameGroup.add(b); return b;
+  });
+  showBubble('MY NAME IS…');
+  for (let i = 0; i < nameBlocks.length; i++) {
+    if (tk !== token) return;
+    const b = nameBlocks[i], u = b.userData, from = u.cur.y, to = slotPos(i).y;
+    b.visible = true;
+    setTimeout(() => sfx.thud(), 220);
+    tween(650, t => { u.cur.y = u.tPos.y = from + (to - from) * t; }, easeOutBounce);
+    await wait(250); say(letters[i]); await wait(650);
+  }
+  if (tk !== token) return;
+  nameState = 'show';
+  const spelled = letters.join('-');
+  ui.lastPrompt = `My name is ${niceName()}. ${letters.join(', ')}.`;
+  showBubble(`MY NAME IS ${n}.<small>${spelled}</small>`);
+  await say(ui.lastPrompt);
+  if (tk === token) document.body.classList.add('show-turn');
+}
+function nameHint() {
+  return letters.map((ch, i) => `<span class="${i < nextIdx ? 'done' : i === nextIdx ? 'next' : 'todo'}">${ch}</span>`).join(' ');
+}
+$('#turnBtn').onclick = () => {
+  sfx.pop(); document.body.classList.remove('show-turn');
+  nameState = 'play'; nextIdx = 0;
+  const a = nameArea(), n = letters.length;
+  nameGroup.children.filter(o => o.userData.ghost).forEach(o => nameGroup.remove(o));
+  letters.forEach((_, i) => {
+    const g = new THREE.Mesh(BLOCK_GEO, new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: .45, roughness: .6 }));
+    g.position.copy(slotPos(i)); g.scale.setScalar(a.bs * .92); g.userData.ghost = true; nameGroup.add(g);
+  });
+  let order = shuffle(nameBlocks.map((_, i) => i));
+  for (let k = 0; k < 6 && n > 1 && order.every((v, i) => v === i); k++) order = shuffle(order);
+  order.forEach((bi, k) => {
+    const u = nameBlocks[bi].userData;
+    u.placed = false; u.tFlip = 0; u.jump.v = 4;
+    u.tPos.set((k - (n - 1) / 2) * a.gap, a.scrY, .3);
+  });
+  ask('Your turn! Spell your name!', `🧩 ${nameHint()}`);
+};
+async function nameTap(b) {
+  const u = b.userData, it = u.item;
+  if (nameState !== 'play') {
+    if (nameState === 'drop') return;
+    return showLetter(b);
+  }
+  if (u.placed) return;
+  const need = letters[nextIdx];
+  if (it.L === need) {
+    u.placed = true; u.tPos.copy(slotPos(nextIdx)); poke(b); say(need);
+    nextIdx++; showBubble(`🧩 ${nameHint()}`);
+    if (nextIdx === letters.length) finishName();
+  } else {
+    u.wig = 1; sfx.nope();
+    say(`This is ${it.L}. Find ${need}!`);
+  }
+}
+async function finishName() {
+  const tk = token;
+  nameState = 'done';
+  await wait(700);
+  if (tk !== token) return;
+  nameGroup.children.filter(o => o.userData.ghost).forEach(o => nameGroup.remove(o));
+  nameBlocks.forEach((b, i) => setTimeout(() => poke(b, 1.2), i * 120));
+  sfx.fanfare(); addStar(3);
+  for (let i = 0; i < 4; i++) setTimeout(() => confetti.burst(new THREE.Vector3((rand() - .5) * 6, 1, 1), RAINBOW, 80), i * 250);
+  showBubble(`⭐ WELL DONE, ${letters.join('')}! ⭐`);
+  await say(`Well done, ${niceName()}! ${letters.join(', ')}!`);
+  if (tk === token) document.body.classList.add('show-turn');
+}
+
+// ---------- input ----------
+stage.renderer.domElement.addEventListener('pointerdown', e => {
+  actx().resume(); setPointer(e);
+  if (mode === 'home' || mode === 'abc') { const b = hitTest(camera, abcGroup.children, 'item'); if (b) showLetter(b); }
+  else if (mode === 'pop') { const b = hitTest(camera, popGroup.children, 'balloon'); if (b) popTap(b); }
+  else if (mode === 'match') {
+    const b = hitTest(camera, options, 'option');
+    if (b) matchTap(b); else if (card && hitTest(camera, [card], 'card')) { poke(card); say(ui.lastPrompt); }
+  }
+  else if (mode === 'name') { const b = hitTest(camera, nameBlocks, 'item'); if (b) nameTap(b); }
+});
+
+stage.onResize = () => {
+  if (mode === 'abc') layoutAbc();
+  if (mode === 'match') placeMatch();
+  if (mode === 'name' && nameState !== 'ask') {
+    const a = nameArea();
+    nameBlocks.forEach((b, i) => { b.userData.tScale = a.bs; if (nameState !== 'play' || b.userData.placed) b.userData.tPos.copy(slotPos(i)); });
+    nameGroup.children.filter(o => o.userData.ghost).forEach((g, i) => { g.position.copy(slotPos(i)); g.scale.setScalar(a.bs * .92); });
+  }
+};
+
+// ---------- loop ----------
+stage.loop((dt, t) => {
+  if (mode === 'home') {
+    const { w, h } = stage.dims();
+    abcBlocks.forEach((b, i) => {
+      const a = i / abcBlocks.length * Math.PI * 2 + t * .08;
+      b.userData.tPos.set(Math.cos(a) * w * .47, Math.sin(a) * h * .43, -1.5);
+      b.userData.tScale = Math.min(w, h) * .06;
+    });
+  }
+  if (abcGroup.visible) abcBlocks.forEach(b => animateToy(b, dt, t));
+  if (matchGroup.visible) matchGroup.children.forEach(o => animateToy(o, dt, t, o.userData.card ? .5 : 1));
+  if (nameGroup.visible) nameBlocks.forEach(b => animateToy(b, dt, t));
+  updateBalloons(dt, t);
+  confetti.update(dt);
+});
+
+setMode('home');
+</script>
+</body>
+</html>

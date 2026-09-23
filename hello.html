@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Hello, everyone! – Lesson 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/common.css">
+<style>
+  [data-mode=find] #replayBtn { display: block; }
+  .sr[data-mode=me].joined #micBtn { display: block; }
+  [data-mode=meet] #listenBtn { display: block; }
+  [data-mode=me].joined #saidBtn, [data-mode=me].joined #editBtn { display: block; }
+  #bubble { bottom: auto; top: 84px; }
+
+  #builder { position: fixed; right: 16px; top: 84px; bottom: 16px; width: min(440px, 48vw); display: none; flex-direction: column; gap: 16px;
+    background: #fff; border: 4px solid var(--teal); border-radius: 30px; padding: 14px; overflow-y: auto; box-shadow: 0 8px 0 rgba(0,0,0,.08); }
+  [data-mode=me].building #builder { display: flex; }
+  #builder .sec { display: flex; align-items: center; gap: 10px; }
+  #builder .sec > span { font-size: 28px; width: 38px; text-align: center; flex: none; }
+  #builder .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .opt { width: 52px; height: 52px; border-radius: 50%; border: 3px solid #e3eaef; background: #fff; font-size: 24px; line-height: 1; padding: 0; }
+  .opt.sel { border-color: #ff5c8a; box-shadow: 0 0 0 3px #ffd1e0; transform: scale(1.08); }
+  .opt.sw { box-shadow: inset -3px -4px 0 rgba(0,0,0,.15); }
+  .opt.sw.sel { box-shadow: inset -3px -4px 0 rgba(0,0,0,.15), 0 0 0 3px #ffd1e0; }
+  #builder .row { display: flex; gap: 8px; align-items: center; margin-top: auto; }
+  #nameInput { flex: 1; min-width: 0; font-family: inherit; font-weight: 800; font-size: 28px; letter-spacing: .1em; text-transform: uppercase; text-align: center;
+    padding: 2px 10px; border-radius: 18px; border: 4px solid #d7e3ea; color: #1a8a8f; outline: none; user-select: text; -webkit-user-select: text; }
+  @media (max-aspect-ratio: 1/1) {
+    #builder { left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; max-height: 50vh; }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body data-mode="home">
+<div id="tint"></div>
+
+<div id="top">
+  <button id="homeBtn" class="icon" aria-label="Home">🏠</button>
+  <div id="title"></div>
+  <div id="stars">⭐ <b>0</b></div>
+  <button id="replayBtn" class="icon" aria-label="Listen again">🔊</button>
+  <button id="micBtn" class="icon" aria-label="Speak">🎤</button>
+</div>
+<div id="bubble" class="hidden"></div>
+
+<div id="builder">
+  <div class="sec"><span>✂️</span><div class="opts" id="styles"></div></div>
+  <div class="sec"><span>💇</span><div class="opts" id="hairs"></div></div>
+  <div class="sec"><span>🙂</span><div class="opts" id="skins"></div></div>
+  <div class="sec"><span>👕</span><div class="opts" id="shirts"></div></div>
+  <div class="sec"><span>✨</span><div class="opts" id="extras"></div></div>
+  <div class="row"><input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false"><button id="doneBtn" class="big">✅</button></div>
+</div>
+
+<div id="bottom">
+  <button id="listenBtn" class="big">▶ LISTEN, POINT AND SAY</button>
+  <button id="saidBtn" class="big">✅ I SAID IT!</button>
+  <button id="editBtn" class="big alt">✏️ CHANGE ME</button>
+</div>
+
+<div id="home">
+  <a class="back" href="index.html">← LESSONS</a>
+  <h1 id="logo"></h1>
+  <p>LESSON 1 · HELLO, EVERYONE!</p>
+  <div class="cards">
+    <button class="card" data-go="meet" style="--c:#1e9bf0"><b>👋</b><strong>MEET MY FRIENDS</strong><em>Ascultă și spune</em></button>
+    <button class="card" data-go="find" style="--c:#4cc13a"><b>🔍</b><strong>WHO IS IT?</strong><em>Găsește prietenul</em></button>
+    <button class="card" data-go="me" style="--c:#ff5c8a;grid-column:1/-1"><b>🧒</b><strong>SAY YOUR NAME</strong><em>Fă-ți personajul și prezintă-te</em></button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {
+  $, rand, wait, cap, pick, shuffle, COLOURS, WHITE, actx, sfx, say, SR, listen, ui, showBubble, hideBubble, ask, addStar,
+  createStage, setPointer, hitTest, createConfetti, toScreen, RAINBOW,
+} from './shared/common.js';
+import {
+  FRIENDS, SKIN, HAIR, HAIR_STYLES, makeKid, placeKid, updateKid, kidSay, createSpeech, makeIsland, makeSun, makeCloud, loadAvatar, saveAvatar,
+} from './shared/world.js';
+
+$('#logo').innerHTML = [...'HELLO!'].map((ch, i) =>
+  `<span style="color:${['#e8262b', '#ff8a1c', '#efb300', '#4cc13a', '#1e9bf0', '#7b3fb5'][i]};animation-delay:${i * .15}s">${ch}</span>`).join('');
+
+const stage = createStage();
+const { scene, camera } = stage;
+const confetti = createConfetti(scene);
+const speech = createSpeech(camera);
+
+// ---------- world ----------
+const world = new THREE.Group(); world.rotation.x = .2; scene.add(world);
+world.add(makeIsland().group);
+const sunObj = makeSun(); scene.add(sunObj);
+const clouds = [0, 1, 2].map(() => { const c = makeCloud(); scene.add(c); return c; });
+
+function makeTag(text, me) {
+  const el = document.createElement('div');
+  el.className = 'tag hidden' + (me ? ' me' : ''); el.textContent = text.toUpperCase();
+  document.body.appendChild(el); return el;
+}
+const friends = ['chen', 'ella', 'mark', 'asha'].map((id, i) => {
+  const k = makeKid(FRIENDS[id]); world.add(k);
+  k.userData.tag = makeTag(FRIENDS[id].name);
+  placeKid(k, -3 + i * 2, 0, .9);
+  return k;
+});
+let me = null;
+const allKids = () => me ? [...friends, me] : friends;
+
+const studio = new THREE.Group(); scene.add(studio);
+let studioKid = null;
+
+function layout() {
+  const { w, h } = stage.dims();
+  const s = Math.min(1, w / 13, h / 7);
+  world.scale.setScalar(s); world.position.set(0, -h * .2, 0);
+  sunObj.position.set(-w * .36, h * .3, -2); sunObj.scale.setScalar(Math.max(.6, s));
+  clouds.forEach((c, i) => { c.userData.baseX = (i - 1) * w * .33; c.position.set(c.userData.baseX, h * (.33 - (i % 2) * .08), -3); });
+  const portrait = camera.aspect < 1;
+  const ks = portrait ? h * .32 / 2.7 : Math.min(h * .6 / 2.7, w * .4 / 1.4);
+  studio.scale.setScalar(ks);
+  studio.position.set(portrait ? 0 : -w * .22, portrait ? h * .2 - 1.35 * ks : -1.35 * ks - .15, 0);
+}
+layout();
+stage.onResize = layout;
+
+// ---------- modes ----------
+let mode = 'home', token = 0, busy = false;
+const TITLES = { meet: 'LISTEN, POINT AND SAY', find: 'WHO IS IT?', me: 'SAY YOUR NAME' };
+function setMode(m) {
+  mode = m; token++; busy = false;
+  document.body.dataset.mode = m; document.body.classList.remove('building', 'joined');
+  speechSynthesis.cancel(); hideBubble(); speech.hide();
+  $('#title').textContent = TITLES[m] || '';
+  world.visible = true; studio.visible = false;
+  friends.forEach((k, i) => { k.userData.tPos.set(-3 + i * 2, 0, .9); k.userData.tWave = 0; k.userData.tag.classList.remove('reveal'); });
+  if (me) { world.remove(me); me.userData.tag.remove(); me = null; }
+  if (m === 'meet') ask('Listen, point and say!', '👆 TAP A FRIEND!');
+  if (m === 'find') startFind();
+  if (m === 'me') startBuilder();
+}
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { actx().resume(); sfx.pop(); setMode(b.dataset.go); });
+$('#homeBtn').onclick = () => { sfx.pop(); setMode('home'); };
+$('#replayBtn').onclick = () => { if (ui.lastPrompt) say(ui.lastPrompt); };
+
+function hop(k, v = 4) { k.userData.jump.v = v; }
+
+// --- 1. meet my friends ---
+async function friendTalk(k) {
+  hop(k, 3); sfx.pop();
+  await kidSay(k, k.userData.p.line, { bubble: speech });
+}
+$('#listenBtn').onclick = async () => {
+  if (busy) return;
+  busy = true; $('#listenBtn').disabled = true;
+  const tk = token;
+  hideBubble();
+  for (const k of friends) {
+    if (tk !== token) break;
+    await friendTalk(k);
+    await wait(250);
+  }
+  if (tk === token) ask('Now you! Point and say!', '🗣️ NOW YOU! POINT AND SAY');
+  busy = false; $('#listenBtn').disabled = false;
+};
+
+// --- 2. who is it? ---
+let target = null, findLocked = false;
+async function startFind() {
+  const tk = token;
+  findLocked = true;
+  friends.forEach(k => k.userData.tag.classList.remove('reveal'));
+  const spots = shuffle([-3, -1, 1, 3]);
+  friends.forEach((k, i) => k.userData.tPos.set(spots[i], 0, .9));
+  target = pick(friends.filter(k => k !== target));
+  showBubble('👀 …');
+  await wait(1800);
+  if (tk !== token) return;
+  findLocked = false;
+  ask(`Where is ${target.userData.p.name}?`, '🔍 WHERE IS…? 🔊');
+}
+async function findTap(k) {
+  if (findLocked) return;
+  const tk = token, name = k.userData.p.name;
+  k.userData.tag.classList.add('reveal');
+  if (k === target) {
+    findLocked = true; hop(k, 5); sfx.win(); addStar();
+    k.updateWorldMatrix(true, false);
+    confetti.burst(new THREE.Vector3().setFromMatrixPosition(k.matrixWorld).add(new THREE.Vector3(0, 1.5, 1)), RAINBOW, 80);
+    showBubble(`✅ ${name.toUpperCase()}!`);
+    await kidSay(k, `Yes! I'm ${name}!`, { bubble: speech });
+    await wait(400);
+    if (tk === token) startFind();
+  } else {
+    k.userData.shy = 1; sfx.nope();
+    await kidSay(k, `No! I'm ${name}!`, { bubble: speech, wave: false });
+    if (tk === token) setTimeout(() => k.userData.tag.classList.remove('reveal'), 500);
+  }
+}
+
+// --- 3. say your name (avatar builder) ---
+let av = loadAvatar();
+const STYLE_ICONS = { short: '👦', spiky: '⚡', ponytail: '🎀', pigtails: '👧', buns: '🍡', long: '👩' };
+const nameInput = $('#nameInput');
+const cleanName = v => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10);
+
+function option(parent, { icon = '', css, sel, onPick, cls = '' }) {
+  const b = document.createElement('button');
+  b.className = 'opt ' + cls + (sel ? ' sel' : '');
+  if (css) b.style.background = css;
+  b.textContent = icon;
+  b.onclick = () => { parent.querySelectorAll('.opt').forEach(o => o.classList.remove('sel')); b.classList.add('sel'); sfx.pop(); onPick(); rebuildStudio(); };
+  parent.appendChild(b);
+}
+function buildControls() {
+  ['#styles', '#hairs', '#skins', '#shirts', '#extras'].forEach(s => { $(s).innerHTML = ''; });
+  HAIR_STYLES.forEach(st => option($('#styles'), { icon: STYLE_ICONS[st], sel: av.style === st, onPick: () => { av.style = st; } }));
+  Object.entries(HAIR).forEach(([id, css]) => option($('#hairs'), { css, cls: 'sw', sel: av.hair === css, onPick: () => { av.hair = css; say(cap(id)); } }));
+  Object.values(SKIN).forEach(css => option($('#skins'), { css, cls: 'sw', sel: av.skin === css, onPick: () => { av.skin = css; } }));
+  [...COLOURS, WHITE].forEach(c => option($('#shirts'), { css: c.css, cls: 'sw', sel: av.shirt === c.css, onPick: () => { av.shirt = c.css; say(cap(c.id)); } }));
+  const g = document.createElement('button');
+  g.className = 'opt' + (av.glasses ? ' sel' : ''); g.textContent = '👓';
+  g.onclick = () => { av.glasses = !av.glasses; g.classList.toggle('sel', av.glasses); sfx.pop(); rebuildStudio(); };
+  $('#extras').appendChild(g);
+}
+function rebuildStudio() {
+  if (studioKid) studio.remove(studioKid);
+  studioKid = makeKid(av); studio.add(studioKid); placeKid(studioKid, 0, 0, 0);
+  studioKid.userData.jump.v = 3; studioKid.userData.tWave = 1;
+  const k = studioKid; setTimeout(() => { k.userData.tWave = 0; }, 900);
+}
+function startBuilder() {
+  document.body.classList.remove('joined'); document.body.classList.add('building');
+  world.visible = false; studio.visible = true;
+  av = loadAvatar();
+  nameInput.value = (localStorage.getItem('stefi-name') || 'STEFI');
+  buildControls(); rebuildStudio();
+  say("What's your name?");
+  ui.lastPrompt = "What's your name?";
+}
+$('#doneBtn').onclick = () => {
+  const n = cleanName(nameInput.value) || 'STEFI';
+  localStorage.setItem('stefi-name', n);
+  saveAvatar(av); av = loadAvatar();
+  actx().resume(); sfx.win();
+  startJoin();
+};
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('#doneBtn').click(); });
+$('#editBtn').onclick = () => { sfx.pop(); setMode('me'); };
+
+async function startJoin() {
+  const tk = token;
+  document.body.classList.remove('building');
+  world.visible = true; studio.visible = false;
+  me = makeKid(av); me.userData.me = true; world.add(me);
+  me.userData.tag = makeTag(av.name, true);
+  placeKid(me, 7.5, 0, 1.4); me.userData.tPos.set(0, 0, 1.4);
+  [-4, -2, 2, 4].forEach((x, i) => friends[i].userData.tPos.set(x, 0, .9));
+  showBubble('👋 …');
+  await wait(4600);
+  const greet = [`Hello, ${av.name}!`, `Hi, ${av.name}!`, `Hello, ${av.name}!`, `Hi, ${av.name}!`];
+  for (let i = 0; i < friends.length; i++) {
+    if (tk !== token) return;
+    hop(friends[i], 3);
+    await kidSay(friends[i], greet[i], { bubble: speech });
+  }
+  if (tk !== token) return;
+  document.body.classList.add('joined');
+  const line = `Hi! My name is ${av.name}.`;
+  ask(`Now you! Say: ${line}`, `🗣️ NOW YOU!<small>${line.toUpperCase()}</small>`);
+  ui.lastPrompt = line;
+}
+async function celebrate() {
+  const tk = token;
+  sfx.fanfare(); addStar(2);
+  allKids().forEach((k, i) => setTimeout(() => { hop(k, 5); k.userData.tWave = 1; }, i * 120));
+  for (let i = 0; i < 3; i++) setTimeout(() => confetti.burst(new THREE.Vector3((rand() - .5) * 6, 0, 1.5), RAINBOW, 80), i * 250);
+  showBubble(`⭐ HELLO, ${av.name.toUpperCase()}! ⭐`);
+  await kidSay(friends[3], `Hello, ${av.name}! Welcome!`, { bubble: speech });
+  if (tk === token) allKids().forEach(k => { k.userData.tWave = 0; });
+}
+$('#saidBtn').onclick = () => { actx().resume(); celebrate(); };
+let listening = false;
+$('#micBtn').onclick = async () => {
+  if (listening || !SR) return;
+  listening = true; speechSynthesis.cancel(); $('#micBtn').classList.add('on');
+  const tk = token;
+  showBubble('🎤 …');
+  const heard = (await listen()).join(' ');
+  listening = false; $('#micBtn').classList.remove('on');
+  if (tk !== token) return;
+  if (/\b(name|hi|hello|high)\b/.test(heard) || heard.includes(av.name.toLowerCase())) celebrate();
+  else { sfx.nope(); showBubble(`🤔 TRY AGAIN!<small>HI! MY NAME IS ${av.name.toUpperCase()}.</small>`); say('Try again!'); }
+};
+
+// ---------- input ----------
+stage.renderer.domElement.addEventListener('pointerdown', e => {
+  actx().resume(); setPointer(e);
+  if (mode === 'me' && studio.visible) {
+    if (studioKid && hitTest(camera, [studioKid], 'kid')) { hop(studioKid); kidSay(studioKid, `Hi! My name is ${cap(cleanName(nameInput.value).toLowerCase() || 'Stefi')}.`); }
+    return;
+  }
+  const k = hitTest(camera, allKids(), 'kid');
+  if (!k) return;
+  if (mode === 'find') return findTap(k);
+  if (k.userData.me) { hop(k); return kidSay(k, `Hi! My name is ${av.name}.`, { bubble: speech }); }
+  if (mode === 'meet' || mode === 'home' || mode === 'me') friendTalk(k);
+});
+
+// ---------- loop ----------
+let nextWave = 3;
+stage.loop((dt, t) => {
+  if (mode === 'home' && t > nextWave) {
+    const k = pick(friends); k.userData.tWave = 1; hop(k, 2.5);
+    setTimeout(() => { k.userData.tWave = 0; }, 1400);
+    nextWave = t + 2.5 + rand() * 2;
+  }
+  allKids().forEach(k => {
+    updateKid(k, dt, t);
+    const tag = k.userData.tag;
+    const show = world.visible && (mode === 'meet' || (mode === 'me' && !studio.visible) || tag.classList.contains('reveal'));
+    tag.classList.toggle('hidden', !show);
+    if (show) {
+      k.updateWorldMatrix(true, false);
+      const p = toScreen(camera, new THREE.Vector3(0, -.25, .3).applyMatrix4(k.matrixWorld));
+      tag.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, 0)`;
+    }
+  });
+  if (studioKid && studio.visible) { updateKid(studioKid, dt, t); studio.rotation.y = Math.sin(t * .6) * .5; }
+  clouds.forEach((c, i) => { c.position.x = c.userData.baseX + Math.sin(t * .1 + i * 2) * .8; });
+  sunObj.rotation.z = Math.sin(t * .5) * .1;
+  sunObj.visible = !studio.visible; clouds.forEach(c => { c.visible = !studio.visible; });
+  speech.update();
+  confetti.update(dt);
+});
+</script>
+</body>
+</html>

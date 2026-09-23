@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>English with Stefi – Clasa I</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/common.css">
+<style>
+  html, body { overflow: auto; }
+  main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.5vh; padding: 24px 16px; }
+  h1 { margin: 0; font-size: clamp(48px, 10vw, 110px); line-height: .95; text-align: center; }
+  h1 span { display: inline-block; animation: bob 2.4s ease-in-out infinite; text-shadow: 0 6px 0 rgba(0,0,0,.12); -webkit-text-stroke: 3px #fff; paint-order: stroke fill; }
+  .sub { margin: 0; font-weight: 800; color: #1a8a8f; font-size: clamp(16px, 2.2vw, 24px); letter-spacing: .1em; }
+  #stars { position: fixed; top: 14px; right: 14px; }
+  .lessons { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px; width: min(1000px, 94vw); }
+  .lesson { padding: 22px 12px 18px; }
+  .lesson b { font-size: clamp(54px, 8vw, 80px); }
+  .lesson strong { font-size: clamp(20px, 2.8vw, 30px); }
+  .lesson small { font-weight: 800; color: #98a2ad; letter-spacing: .08em; }
+  .soon { opacity: .5; pointer-events: none; }
+</style>
+</head>
+<body data-mode="menu">
+<div id="stars">⭐ <b>0</b></div>
+<main>
+  <h1 id="logo"></h1>
+  <p class="sub">CLASA I · LIMBA ENGLEZĂ</p>
+  <div class="lessons">
+    <a class="card lesson" href="hello.html" style="--c:#4cc13a"><small>LESSON 1</small><b>👋</b><strong>HELLO, EVERYONE!</strong><em>Salut, prieteni!</em></a>
+    <a class="card lesson" href="greetings.html" style="--c:#7b3fb5"><small>LESSON 2</small><b>🌅</b><strong>GREETINGS</strong><em>Salutul</em></a>
+    <a class="card lesson" href="alphabet.html" style="--c:#1e9bf0"><small>LESSON 3</small><b>🔤</b><strong>THE ALPHABET</strong><em>Alfabetul</em></a>
+    <a class="card lesson" href="colours.html" style="--c:#ff8a1c"><small>LESSON 4</small><b>🎨</b><strong>COLOURS</strong><em>Culorile</em></a>
+  </div>
+</main>
+<script type="module">
+  const colours = ['#e8262b', '#ff8a1c', '#efb300', '#4cc13a', '#1e9bf0', '#7b3fb5', '#ff7ec1'];
+  document.getElementById('logo').innerHTML = [...'ENGLISH'].map((ch, i) =>
+    `<span style="color:${colours[i % 7]};animation-delay:${i * .15}s">${ch}</span>`).join('');
+  document.querySelector('#stars b').textContent = localStorage.getItem('stefi-stars') || 0;
+</script>
+</body>
+</html>
