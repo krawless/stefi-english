@@ -139,7 +139,13 @@ function padSet(G, n, { x, z, top = 0, size = 6, gap = 1.6, cols = n }) {
     trigger(boxAt(px, top + .6, pz, size - .8, 2.5, size - .8), () => handler?.(i));
     pads.push(pad);
   }
-  tick(dt => pads.forEach(p => { p.flash = Math.max(0, p.flash - dt * 1.6); p.topMat.emissive.copy(p.flashColor).multiplyScalar(p.flash); }));
+  let active = false;
+  const glow = new THREE.Color();
+  // While a question is open the pads softly pulse, so it's obvious they are the answers.
+  tick((dt, t) => pads.forEach(p => {
+    p.flash = Math.max(0, p.flash - dt * 1.6);
+    p.topMat.emissive.copy(p.flashColor).multiplyScalar(p.flash).add(glow.setScalar(active ? .12 + Math.sin(t * 5) * .08 : 0));
+  }));
   const look = (p, { tex, color = '#ffffff' }) => {
     p.topMat.map = tex || null; p.topMat.color.set(tex ? '#ffffff' : color); p.topMat.needsUpdate = true;
     p.sideMat.color.set(color === '#ffffff' ? '#d7e3ea' : color);
@@ -151,10 +157,11 @@ function padSet(G, n, { x, z, top = 0, size = 6, gap = 1.6, cols = n }) {
     // opts: [{tex?, color?}], correct: index; onWrong(i) for feedback.
     round({ opts, correct, onWrong }) {
       if (opts) opts.forEach((o, i) => look(pads[i], o));
+      active = true;
       return new Promise(res => {
         handler = i => {
           const p = pads[i];
-          if (i === correct) { handler = null; p.flashColor.set('#4cc13a'); p.flash = 1; res(i); }
+          if (i === correct) { handler = null; active = false; p.flashColor.set('#4cc13a'); p.flash = 1; res(i); }
           else { p.flashColor.set('#ff3b5c'); p.flash = 1; G.bad(); onWrong?.(i); }
         };
       });
@@ -165,11 +172,20 @@ function padSet(G, n, { x, z, top = 0, size = 6, gap = 1.6, cols = n }) {
 function npc(G, id, x, top, z) {
   const g = makeBlocky(NPCS[id]);
   g.position.set(x, top, z); W.root.add(g);
-  g.userData.id = id; g.userData.home = new THREE.Vector3(x, top, z);
-  g.userData.trig = trigger(boxAt(x, top, z, 4, 5, 4), () => g.userData.onTouch?.(g));
+  const u = g.userData;
+  u.id = id; u.home = new THREE.Vector3(x, top, z);
+  u.trig = trigger(boxAt(x, top, z, 4, 5, 4), () => u.onTouch?.(g));
   tick((dt, t) => {
-    const dx = player.pos.x - g.position.x, dz = player.pos.z - g.position.z;
-    const want = Math.hypot(dx, dz) < 18 ? Math.atan2(dx, dz) : 0;
+    if (!g.visible) return;
+    if (u.walkTo) {
+      const dx = u.walkTo.x - g.position.x, dz = u.walkTo.z - g.position.z, L = Math.hypot(dx, dz);
+      if (L < .2) { g.position.x = u.walkTo.x; g.position.z = u.walkTo.z; u.walkTo = null; moveNpc(g, g.position.x, g.position.z); u.onArrive?.(); }
+      else { g.position.x += dx / L * Math.min(L, dt * 7); g.position.z += dz / L * Math.min(L, dt * 7); g.rotation.y = Math.atan2(dx, dz); animateBlocky(g, dt, t, 1, false); return; }
+    }
+    if (u.lying) { animateBlocky(g, dt, t, 0, false); return; }
+    if (u.stretch) u.cheer = .3;
+    const px = player.pos.x - g.position.x, pz = player.pos.z - g.position.z;
+    const want = Math.hypot(px, pz) < 18 ? Math.atan2(px, pz) : 0;
     let d = want - g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
     g.rotation.y += d * (1 - Math.exp(-dt * 6));
     animateBlocky(g, dt, t, 0, false);
@@ -179,6 +195,35 @@ function npc(G, id, x, top, z) {
 function moveNpc(g, x, z) {
   g.position.x = x; g.position.z = z;
   g.userData.trig.box = boxAt(x, g.position.y, z, 4, 5, 4);
+}
+const walkTo = (g, x, z) => new Promise(res => { g.userData.walkTo = new THREE.Vector3(x, 0, z); g.userData.onArrive = res; });
+// Lays an NPC down on a bed (head towards -z); name tag and chat bubble stay above.
+function lieDown(g, x, top, z) {
+  const u = g.userData;
+  u.lying = true; g.rotation.set(-Math.PI / 2, 0, 0); g.position.set(x, top + .45, z + 2.2);
+  u.tag.position.set(0, 0, 3); u.bubble.position.set(0, 0, 4.6);
+}
+function bed(x, top, z, blanket = '#1e9bf0') {
+  block(x, top + 1, z, 3.4, 1, 6.4, '#8b5a2b', { studs: false });
+  block(x, top + 1.3, z - 2.4, 3, .3, 1.4, '#ffffff', { studs: false, solid: false });
+  block(x, top + 1.5, z + .9, 3.2, .5, 3.8, blanket, { studs: false, solid: false });
+  block(x, top + 2.4, z - 3.1, 3.4, 2.4, .4, '#8b5a2b', { studs: false });
+  return top + 1;
+}
+function lamp(x, top, z) {
+  block(x, top + 5, z, .4, 5, .4, '#3a3a44', { studs: false });
+  const l = block(x, top + 6.2, z, 1.4, 1.2, 1.4, '#fff3b0', { studs: false });
+  l.mesh.material = new THREE.MeshStandardMaterial({ color: '#fff3b0', emissive: '#ffcc33', emissiveIntensity: 1.3 });
+}
+function house(x, top, z, lit = false) {
+  block(x, top + 6, z, 8, 6, 6, '#fff1d6');
+  block(x, top + 8.2, z, 9, 2.2, 7, '#d0643f');
+  block(x, top + 3.4, z + 3.05, 2, 3.4, .2, '#8b4513', { studs: false, solid: false });
+  for (const dx of [-2.6, 2.6]) {
+    const w = block(x + dx, top + 4.6, z + 3.05, 1.6, 1.4, .2, '#bfe9ff', { studs: false, solid: false });
+    if (lit) w.mesh.material = new THREE.MeshStandardMaterial({ color: '#fff3b0', emissive: '#ffcc33', emissiveIntensity: 1.2 });
+  }
+  return { door: new THREE.Vector3(x, top, z + 3.4) };
 }
 // Resolves with the NPC the player touches when check(g) is true; wrong touches call onWrong(g).
 function touchQuiz(npcs, check, onWrong) {
@@ -244,11 +289,19 @@ const HUB = {
     [[-70, 40, -60], [30, 46, -90], [90, 38, 0], [-100, 44, 20]].forEach(([x, y, z]) => cloud(x, y, z, 1.4));
     const mark = npc(G, 'mark', 9, 0, 36);
     mark.userData.onTouch = () => { mark.userData.tWave = 1; G.npcSay(mark, "Hi! Let's play!"); setTimeout(() => { mark.userData.tWave = 0; }, 1500); };
+    const next = [1, 2, 3, 4].find(n => G.isUnlocked(n) && !G.isDone(n));
+    if (next) {
+      G.goal(new THREE.Vector3(-39 + (next - 1) * 26, 0, -14));
+      G.note(`➡️ LESSON ${next}`, `Intră în portalul Lesson ${next}! Urmează săgeata galbenă.`);
+    }
     return { spawn: [0, .3, 44], yaw: 0, sky: 'day' };
   },
 };
 
 // ---------- LESSON 1: HELLO, EVERYONE! ----------
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const GO = { ro: 'Poarta s-a deschis! Urmează săgeata galbenă.' };
+const TROPHY = { ro: 'Ia trofeul! 🏆' };
 const L1 = {
   title: 'LESSON 1 · HELLO!', icon: '👋',
   build(G) {
@@ -258,36 +311,43 @@ const L1 = {
     sign('👋 LESSON 1 · HELLO, EVERYONE!', 0, 13, -14, '#4cc13a', 1.8);
     tree(-11, 0, 8); tree(11, 0, 9, .9);
     stones(G, 0, -15, -35, 2);
+    G.goal(V(0, 0, -42));
+    G.note('➡️ GO!', 'Urmează săgeata galbenă. Sari pe pietre cu SPACE!');
 
-    // Island A: meet the four friends.
+    // Island 1: meet the four friends.
     island(0, -50, 40, 30, '#7ccf5a');
     checkpoint(G, 0, 0, -38);
     const ids = ['chen', 'ella', 'mark', 'asha'];
     const A = ids.map((id, i) => npc(G, id, -12 + i * 8, 0, -56));
     const gateA = gate(0, 0, -64.5);
-    onEnter(boxAt(0, 0, -48, 38, 6, 20), async () => {
+    onEnter(boxAt(0, 0, -48, 38, 6, 20), () => {
+      G.stage(1, 3);
       const met = new Set();
-      G.ask('Touch each friend!', '👋 TOUCH EACH FRIEND!');
+      const nextGoal = () => { const n = A.find(g => !met.has(g)); G.goal(n ? n.position.clone() : null); };
+      nextGoal();
+      G.ask('Say hello to your friends! Touch each friend.', '👋 TOUCH EACH FRIEND!', { ro: 'Du-te la fiecare prieten, ca să se prezinte' });
       G.progress('0 / 4');
       A.forEach(g => {
         g.userData.onTouch = async n => {
           if (met.has(n)) return;
-          met.add(n); n.userData.tWave = 1; G.coin(1);
+          met.add(n); nextGoal(); n.userData.tWave = 1; G.coin(1);
           G.progress(`${met.size} / 4`);
+          const doneAll = met.size === 4;
           await G.npcSay(n, n.userData.p.line);
           n.userData.tWave = 0;
-          if (met.size === 4 && alive()) { G.progress(''); G.good(); gateA.open(); G.ask('Great! Go on!', '✅ GREAT! GO ON! ➡️'); }
+          if (doneAll && alive()) { G.progress(''); G.good(); gateA.open(); G.goal(V(0, 0, -102)); G.ask('Great! Go on!', '✅ GREAT! GO ON! ➡️', GO); }
         };
       });
     });
     stones(G, 0, -65, -95, 3);
 
-    // Island B: where is ...?
+    // Island 2: where is ...?
     island(0, -110, 40, 30, '#7ccf5a');
     checkpoint(G, 0, 0, -98);
     const B = ids.map((id, i) => npc(G, id, -12 + i * 8, 0, -116));
     const gateB = gate(0, 0, -124.5);
     onEnter(boxAt(0, 0, -108, 38, 6, 20), async () => {
+      G.stage(2, 3); G.goal(null);
       let last = null;
       for (let r = 0; r < 3 && alive(); r++) {
         const xs = shuffle([-12, -4, 4, 12]);
@@ -295,18 +355,18 @@ const L1 = {
         const target = pick(B.filter(g => g !== last)); last = target;
         const name = target.userData.p.name;
         G.progress(`${r + 1} / 3`);
-        G.ask(`Where is ${name}?`, '🔍 WHERE IS…? 🔊');
-        await touchQuiz(B, g => g === target, g => G.npcSay(g, `No! I'm ${g.userData.p.name}!`));
+        G.ask(`Where is ${name}?`, '🔍 WHERE IS…? 🔊', { ro: 'Ascultă numele și du-te la prietenul acela' });
+        await touchQuiz(B, g => g === target, g => { G.bad(); G.npcSay(g, `No! I'm ${g.userData.p.name}!`); });
         if (!alive()) return;
         target.userData.cheer = 1.5; G.coin(2); G.good(target.position);
         await G.npcSay(target, `Yes! I'm ${name}!`);
       }
       if (!alive()) return;
-      G.progress(''); gateB.open(); G.ask('Super! Go on!', '✅ SUPER! GO ON! ➡️');
+      G.progress(''); gateB.open(); G.goal(V(0, 3, -160)); G.ask('Super! Go on!', '✅ SUPER! GO ON! ➡️', GO);
     });
     stones(G, 0, -125, -155, 3, 0, 3);
 
-    // Island C: say your name on the stage.
+    // Island 3: say your name on the stage.
     island(0, -170, 36, 30, '#7ccf5a', 3);
     checkpoint(G, 0, 3, -158);
     block(0, 4.2, -168, 8, 1.2, 8, '#ffd60a');
@@ -314,28 +374,42 @@ const L1 = {
     const asha = npc(G, 'asha', -8, 3, -170), chen = npc(G, 'chen', 8, 3, -170);
     const mark = npc(G, 'mark', -13, 3, -176), ella = npc(G, 'ella', 13, 3, -176);
     const cup = trophy(G, 0, 3, -181);
+    onEnter(boxAt(0, 3, -160, 34, 6, 6), () => {
+      G.stage(3, 3); G.goal(V(0, 4.2, -168));
+      G.ask('Go on the stage!', '🎤 GO ON THE STAGE!', { ro: 'Urcă pe scena galbenă' });
+    });
     onEnter(boxAt(0, 4.2, -168, 7, 4, 7), async () => {
+      G.goal(null);
       await G.npcSay(asha, "Hello! What's your name?");
       if (!alive()) return;
-      await G.saidIt(`Hi! My name is ${G.name}.`, `🗣️ HI! MY NAME IS ${G.name.toUpperCase()}.`);
+      await G.saidIt(`Hi! My name is ${G.name}.`, `HI! MY NAME IS ${G.name.toUpperCase()}.`);
       if (!alive()) return;
       [asha, chen, mark, ella].forEach(g => { g.userData.cheer = 2; });
       G.good(); G.coin(3);
       await G.npcSay(chen, `Hello, ${G.name}!`);
-      cup.reveal(); G.ask('Get the trophy!', '🏆 GET THE TROPHY!');
+      cup.reveal(); G.goal(V(0, 3, -181)); G.ask('Get the trophy!', '🏆 GET THE TROPHY!', TROPHY);
     });
     return { spawn: [0, 0, 8], yaw: 0, sky: 'day' };
   },
 };
 
 // ---------- LESSON 2: GREETINGS ----------
+// Each island is a little scene; the sky (sun low/high/setting, moon) tells the time of day.
 const GREET = {
-  hello: { text: 'Hello!', icon: '🙋', sky: 'day', bad: ['goodbye', 'night'] },
-  morning: { text: 'Good morning!', icon: '🌅', sky: 'morning', bad: ['evening', 'night'] },
-  afternoon: { text: 'Good afternoon!', icon: '☀️', sky: 'afternoon', bad: ['morning', 'night'] },
-  evening: { text: 'Good evening!', icon: '🌇', sky: 'evening', bad: ['morning', 'afternoon'] },
-  night: { text: 'Good night!', icon: '🌙', sky: 'night', bad: ['morning', 'afternoon'] },
-  goodbye: { text: 'Goodbye!', icon: '👋', sky: 'day', bad: ['hello', 'morning'] },
+  hello: { text: 'Hello!', icon: '🙋', sky: 'day', bad: ['goodbye', 'night'], hint: 'Mark says hi! What do you say?' },
+  morning: { text: 'Good morning!', icon: '🌅', sky: 'morning', bad: ['evening', 'night'], hint: 'Look! It is morning. Mark wakes up. What do you say?' },
+  afternoon: { text: 'Good afternoon!', icon: '☀️', sky: 'afternoon', bad: ['morning', 'night'], hint: 'Look! The sun is high. It is afternoon. What do you say?' },
+  evening: { text: 'Good evening!', icon: '🌇', sky: 'evening', bad: ['morning', 'afternoon'], hint: 'Look! The sun goes down. It is evening. What do you say?' },
+  night: { text: 'Good night!', icon: '🌙', sky: 'night', bad: ['morning', 'afternoon'], hint: 'Look! The moon! It is night. Mark goes to bed. What do you say?' },
+  goodbye: { text: 'Goodbye!', icon: '👋', sky: 'day', bad: ['hello', 'morning'], hint: 'Mark is going home. What do you say?' },
+};
+const RO_TIME = {
+  hello: 'Mark vine la tine. Ce îi spui? Calcă pe salutul potrivit!',
+  morning: 'E dimineață: soarele răsare. Calcă pe salutul potrivit!',
+  afternoon: 'E după-amiază: soarele e sus. Calcă pe salutul potrivit!',
+  evening: 'E seară: soarele apune. Calcă pe salutul potrivit!',
+  night: 'E noapte: luna și stelele. Calcă pe salutul potrivit!',
+  goodbye: 'Mark pleacă acasă. Ce îi spui? Calcă pe salutul potrivit!',
 };
 const L2 = {
   title: 'LESSON 2 · GREETINGS', icon: '🌅',
@@ -346,46 +420,75 @@ const L2 = {
     sign('🌅 LESSON 2 · GREETINGS', 0, 13, -14, '#7b3fb5', 1.8);
     tree(-11, 0, 8);
     const order = ['hello', 'morning', 'afternoon', 'evening', 'night', 'goodbye'];
+    const centers = order.map((_, k) => -50 - k * 58);
+    G.goal(V(0, 0, centers[0] + 10));
+    G.note('➡️ GO!', 'Urmează săgeata galbenă. La fiecare insulă, uită-te la cer!');
     let prevEdge = -15;
-    const cup = { reveal() {} };
     order.forEach((id, k) => {
-      const g = GREET[id], zc = -50 - k * 58, front = zc + 15, back = zc - 15;
+      const g = GREET[id], zc = centers[k], front = zc + 15, back = zc - 15;
       stones(G, 0, prevEdge, front, Math.round((prevEdge - front) / 7) - 1);
       prevEdge = back;
       island(0, zc, 38, 30, id === 'night' ? '#3f8f4a' : '#7ccf5a');
       trigger(boxAt(0, -20, zc + 10, 60, 60, 50), () => G.sky(g.sky));
       checkpoint(G, 0, 0, front - 3);
-      const skyIcon = textSprite(g.icon, { size: 150, height: 8, stroke: null });
-      skyIcon.position.set(id === 'evening' ? 22 : -22, id === 'afternoon' ? 26 : 16, zc - 30); W.root.add(skyIcon);
-      if (id === 'night') [[-15, -8], [15, -8], [-15, 8], [15, 8]].forEach(([x, dz]) => {
-        const l = block(x, 3, zc + dz, 1, 3, 1, '#ffe066', { studs: false });
-        l.mesh.material = new THREE.MeshStandardMaterial({ color: '#fff3b0', emissive: '#ffcc33', emissiveIntensity: 1.2 });
-      });
-      if (id === 'goodbye') { block(12, 6, zc - 11, 8, 6, 6, '#fff1d6'); block(12, 8.4, zc - 11, 9, 2.4, 7, '#d0643f'); block(12, 3.5, zc - 7.9, 2, 3.5, .3, '#8b4513', { solid: false }); }
-      const mark = npc(G, 'mark', id === 'goodbye' ? 8 : 0, 0, zc - 8);
-      const set = padSet(G, 3, { x: 0, z: zc + 3 });
+
+      // The little scene for this time of day.
+      let mark;
+      if (id === 'hello') { mark = npc(G, 'mark', 0, 0, zc - 12); tree(-13, 0, zc - 8); }
+      if (id === 'morning') { bed(-7, 0, zc - 8, '#ff9ec0'); mark = npc(G, 'mark', -2, 0, zc - 8); mark.userData.stretch = true; }
+      if (id === 'afternoon') {
+        mark = npc(G, 'mark', 0, 0, zc - 8);
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(.9, 20, 14), plastic('#e8262b', .4)); ball.castShadow = true; W.root.add(ball);
+        tick((dt, t) => ball.position.set(4, 1 + Math.abs(Math.sin(t * 3)) * 3, zc - 7));
+      }
+      if (id === 'evening') { house(10, 0, zc - 10, true); lamp(-8, 0, zc - 4); lamp(8, 0, zc - 4); mark = npc(G, 'mark', 0, 0, zc - 8); }
+      if (id === 'night') {
+        const top = bed(0, 0, zc - 9, '#1e9bf0'); mark = npc(G, 'mark', 0, 0, zc - 9); lieDown(mark, 0, top, zc - 9);
+        lamp(-6, 0, zc - 6);
+        const z = textSprite('Z z z', { size: 90, height: 2.2, color: '#ffffff' }); W.root.add(z);
+        tick((dt, t) => z.position.set(2 + Math.sin(t) * .5, 5 + (t % 2), zc - 10));
+      }
+      if (id === 'goodbye') {
+        const h = house(12, 0, zc - 11);
+        mark = npc(G, 'mark', 2, 0, zc - 6);
+        const bag = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.4, .6), plastic('#ff8a1c')); bag.position.set(0, 0, -.7); mark.userData.torso.add(bag);
+        mark.userData.door = h.door;
+      }
+      const set = padSet(G, 3, { x: 0, z: zc + 4 });
       const gt = id === 'goodbye' ? null : gate(0, 0, back + .5);
       const endCup = id === 'goodbye' ? trophy(G, -8, 0, zc - 10) : null;
-      onEnter(boxAt(0, 0, zc + 8, 36, 6, 14), async () => {
-        mark.userData.tWave = 1;
-        const opts = shuffle([id, ...g.bad]);
-        G.ask('What do you say?', `🤔 WHAT DO YOU SAY?`, `${g.icon} What do you say?`);
-        await set.round({ opts: opts.map(o => ({ tex: greetTex(GREET[o].icon, GREET[o].text) })), correct: opts.indexOf(id), onWrong: i => { G.voice(GREET[opts[i]].text, 1.25); G.npcSay(mark, 'Hmm… no!'); } });
+
+      onEnter(boxAt(0, 0, zc + 10, 36, 6, 10), async () => {
+        G.stage(k + 1, 6); G.goal(null);
+        if (id === 'hello') { await walkTo(mark, 0, zc - 1); mark.userData.tWave = 1; }
+        if (id === 'goodbye') mark.userData.tWave = 1;
         if (!alive()) return;
-        G.voice(g.text, 1.25); G.coin(3); G.good(mark.position);
-        await wait(900);
+        const opts = shuffle([id, ...g.bad]);
+        G.ask('Look! What do you say to Mark?', '🤔 WHAT DO YOU SAY TO MARK?', { hint: g.hint, ro: RO_TIME[id] });
+        await set.round({
+          opts: opts.map(o => ({ tex: greetTex(GREET[o].icon, GREET[o].text) })), correct: opts.indexOf(id),
+          onWrong: i => { G.voice(GREET[opts[i]].text, 1.25); setTimeout(() => G.npcSay(mark, 'Hmm… no!'), 900); },
+        });
+        if (!alive()) return;
+        G.coin(3); G.good(mark.position);
+        await G.voice(g.text, 1.25);
+        mark.userData.tWave = 1;
         await G.npcSay(mark, g.text);
         mark.userData.tWave = 0;
         if (!alive()) return;
-        if (gt) { gt.open(); G.ask('Go on!', '✅ GO ON! ➡️'); }
-        else { flyAway(mark); endCup.reveal(); G.ask('Get the trophy!', '🏆 GET THE TROPHY!'); }
+        if (gt) { gt.open(); G.goal(V(0, 0, centers[k + 1] + 10)); G.ask('Go on!', '✅ GO ON! ➡️', GO); }
+        else {
+          mark.userData.tWave = 1;
+          await walkTo(mark, mark.userData.door.x, mark.userData.door.z);
+          mark.visible = false;
+          endCup.reveal(); G.goal(V(-8, 0, zc - 10)); G.ask('Get the trophy!', '🏆 GET THE TROPHY!', TROPHY);
+        }
       });
     });
     return { spawn: [0, 0, 8], yaw: 0, sky: 'day' };
   },
 };
 
-// ---------- LESSON 3: THE ALPHABET ----------
 const ABC = [
   ['A', 'apple', '🍎'], ['B', 'bee', '🐝'], ['C', 'cat', '🐱'], ['D', 'dog', '🐶'], ['E', 'elephant', '🐘'], ['F', 'flower', '🌸'],
   ['G', 'giraffe', '🦒'], ['H', 'horse', '🐴'], ['I', 'ice cream', '🍦'], ['J', 'jeans', '👖'], ['K', 'koala', '🐨'], ['L', 'lemon', '🍋'],
@@ -417,8 +520,10 @@ const L3 = {
     water();
     island(0, 0, 30, 30, '#7ccf5a');
     sign('🔤 LESSON 3 · THE ALPHABET', 0, 13, -14, '#1e9bf0', 1.8);
-    G.toast('Sari pe litere! 🔤');
     let edge = letterPath(G, [...'ABCDEFGH'], -15);
+    let zcB = 0, zcC = 0;
+    G.goal(V(0, 0, edge - 5));
+    G.note('➡️ GO!', 'Sari pe cuburi-litere (SPACE) și ascultă fiecare literă!');
 
     // Island A: which letter? (picture -> letter)
     let zc = edge - 15;
@@ -429,48 +534,50 @@ const L3 = {
     const setA = padSet(G, 3, { x: 0, z: zc + 3 });
     const gateA = gate(0, 0, zc - 14.5);
     onEnter(boxAt(0, 0, zc + 8, 36, 6, 14), async () => {
+      G.stage(1, 3); G.goal(null);
       let last = null;
       for (let r = 0; r < 3 && alive(); r++) {
         const it = pick(ABC.filter(a => a !== last && a.L !== 'N' && a.L !== 'X')); last = it;
         const opts = shuffle([it, ...shuffle(ABC.filter(a => a !== it)).slice(0, 2)]);
         pic.material.map = emojiTex(it.emoji); pic.material.needsUpdate = true;
         G.progress(`${r + 1} / 3`);
-        G.ask('Which letter?', '🤔 WHICH LETTER?', `${cap(it.word)}! Which letter?`);
+        G.ask('Which letter?', '🤔 WHICH LETTER?', { hint: `${cap(it.word)}! Which letter?`, ro: 'Cu ce literă începe? Calcă pe litera potrivită (🔊 = ajutor)' });
         await setA.round({ opts: opts.map(o => ({ tex: letterTex(o.L, '#1b2733') })), correct: opts.indexOf(it), onWrong: i => G.voice(`No, this is ${opts[i].L}.`) });
         if (!alive()) return;
         pic.material.map = emojiTex(it.emoji, { label: it.word, border: '#4cc13a' }); pic.material.needsUpdate = true;
-        G.coin(2); G.good(new THREE.Vector3(0, 6, zc - 8));
+        G.coin(2); G.good(pic.position);
         await G.voice(`Yes! ${it.L} for ${it.word}!`);
       }
       if (!alive()) return;
-      G.progress(''); gateA.open(); G.ask('Go on!', '✅ GO ON! ➡️');
+      G.progress(''); gateA.open(); G.goal(V(0, 0, zcB + 10)); G.ask('Go on!', '✅ GO ON! ➡️', GO);
     });
     edge = letterPath(G, [...'IJKLMNOP'], zc - 15);
 
     // Island B: find the letter.
-    zc = edge - 15;
+    zc = zcB = edge - 15;
     island(0, zc, 38, 30, '#7ccf5a');
     checkpoint(G, 0, 0, zc + 12);
     const setB = padSet(G, 4, { x: 0, z: zc + 1 });
     const gateB = gate(0, 0, zc - 14.5);
     onEnter(boxAt(0, 0, zc + 8, 36, 6, 14), async () => {
+      G.stage(2, 3); G.goal(null);
       let last = null;
       for (let r = 0; r < 3 && alive(); r++) {
         const it = pick(ABC.filter(a => a !== last)); last = it;
         const opts = shuffle([it, ...shuffle(ABC.filter(a => a !== it)).slice(0, 3)]);
         G.progress(`${r + 1} / 3`);
-        G.ask(`Find the letter ${it.L}!`, '🔍 FIND THE LETTER… 🔊');
+        G.ask(`Find the letter ${it.L}!`, '🔍 FIND THE LETTER… 🔊', { ro: 'Calcă pe litera pe care o auzi' });
         await setB.round({ opts: opts.map(o => ({ tex: letterTex(o.L, o.color) })), correct: opts.indexOf(it), onWrong: i => G.voice(`This is ${opts[i].L}. Find ${it.L}!`) });
         if (!alive()) return;
         G.coin(2); G.good(); await G.voice(`Yes! ${it.L}!`);
       }
       if (!alive()) return;
-      G.progress(''); gateB.open(); G.ask('Go on!', '✅ GO ON! ➡️');
+      G.progress(''); gateB.open(); G.goal(V(0, 0, zcC + 12)); G.ask('Go on!', '✅ GO ON! ➡️', GO);
     });
     edge = letterPath(G, [...'QRSTUVWXYZ'], zc - 15);
 
     // Island C: spell your name by stepping on its letters in order.
-    zc = edge - 15;
+    zc = zcC = edge - 15;
     island(0, zc, 40, 34, '#7ccf5a');
     checkpoint(G, 0, 0, zc + 14);
     const name = G.name.toUpperCase(), uniq = [...new Set(name)];
@@ -481,7 +588,8 @@ const L3 = {
     sign(`✏️ ${name}`, 0, 11, zc - 12, '#7b3fb5', 3);
     const cup = trophy(G, 0, 0, zc - 12);
     onEnter(boxAt(0, 0, zc + 10, 38, 6, 12), async () => {
-      G.ask(`Spell your name! ${[...name].join(', ')}.`, `✏️ SPELL YOUR NAME!`);
+      G.stage(3, 3); G.goal(null);
+      G.ask(`Spell your name! ${[...name].join(', ')}.`, `✏️ SPELL YOUR NAME!`, { ro: 'Calcă pe literele numelui tău, pe rând' });
       for (let k = 0; k < name.length && alive(); k++) {
         G.progress([...name].map((c, i) => i < k ? c : i === k ? `[${c}]` : '_').join(' '));
         const L = name[k];
@@ -493,7 +601,7 @@ const L3 = {
       if (!alive()) return;
       G.progress(name); G.good(); G.coin(3);
       await G.voice(`Well done! ${[...name].join(', ')}! ${G.name}!`);
-      cup.reveal(); G.ask('Get the trophy!', '🏆 GET THE TROPHY!');
+      cup.reveal(); G.goal(V(0, 0, zc - 12)); G.ask('Get the trophy!', '🏆 GET THE TROPHY!', TROPHY);
     });
     return { spawn: [0, 0, 8], yaw: 0, sky: 'day' };
   },
@@ -513,6 +621,8 @@ const L4 = {
     sign('🎨 LESSON 4 · COLOURS', 0, 13, -14, '#ff8a1c', 1.8);
     tree(11, 0, 8);
     stones(G, 0, -15, -35, 2, 0, 0, '#ffd60a');
+    G.goal(V(0, 0, -40));
+    G.note('➡️ GO!', 'Urmează săgeata galbenă!');
 
     // Island A: jump on RED!
     let zc = -55;
@@ -522,17 +632,18 @@ const L4 = {
     COLOURS.forEach((c, i) => setA.look(setA.pads[i], { color: c.css }));
     const gateA = gate(0, 0, zc - 19.5);
     onEnter(boxAt(0, 0, zc + 14, 38, 6, 10), async () => {
+      G.stage(1, 3); G.goal(null);
       let last = null;
       for (let r = 0; r < 3 && alive(); r++) {
         const c = pick(COLOURS.filter(x => x !== last)); last = c;
         G.progress(`${r + 1} / 3`);
-        G.ask(`Jump on ${c.id}!`, '🎨 JUMP ON… 🔊');
+        G.ask(`Jump on ${c.id}!`, '🎨 JUMP ON… 🔊', { ro: 'Calcă pe culoarea pe care o auzi' });
         await setA.round({ correct: COLOURS.indexOf(c), onWrong: i => G.voice(`This is ${COLOURS[i].id}!`) });
         if (!alive()) return;
         G.coin(2); G.good(); await G.voice(`Yes! ${cap(c.id)}!`);
       }
       if (!alive()) return;
-      G.progress(''); gateA.open(); G.ask('Go on!', '✅ GO ON! ➡️');
+      G.progress(''); gateA.open(); G.goal(V(0, 0, -100)); G.ask('Go on!', '✅ GO ON! ➡️', GO);
     });
     stones(G, 0, zc - 20, zc - 40, 2, 0, 0, '#ff7ec1');
 
@@ -546,21 +657,22 @@ const L4 = {
     const setB = padSet(G, 3, { x: 0, z: zc + 3 });
     const gateB = gate(0, 0, zc - 14.5);
     onEnter(boxAt(0, 0, zc + 8, 36, 6, 14), async () => {
+      G.stage(2, 3); G.goal(null);
       const items = shuffle(PAINT).slice(0, 3);
       for (let r = 0; r < 3 && alive(); r++) {
         const [thing, colour, emoji] = items[r];
         const opts = shuffle([colour, ...shuffle(PAINT.map(p => p[1]).filter(c => c !== colour)).slice(0, 2)]);
         pic.material.map = emojiTex(emoji, { gray: true }); pic.material.needsUpdate = true;
         G.progress(`${r + 1} / 3`);
-        G.ask(`What colour is the ${thing}?`, '🖌️ WHAT COLOUR? 🔊');
+        G.ask(`What colour is the ${thing}?`, '🖌️ WHAT COLOUR IS IT? 🔊', { ro: 'Ce culoare are? Calcă pe culoarea potrivită' });
         await setB.round({ opts: opts.map(o => ({ color: byId[o].css })), correct: opts.indexOf(colour), onWrong: i => G.voice(`A ${opts[i]} ${thing}? No, no, no!`) });
         if (!alive()) return;
         pic.material.map = emojiTex(emoji, { border: byId[colour].css }); pic.material.needsUpdate = true;
-        G.coin(2); G.good(new THREE.Vector3(0, 7, zc - 8));
+        G.coin(2); G.good(pic.position);
         await G.voice(`Yes! The ${thing} is ${colour}!`);
       }
       if (!alive()) return;
-      G.progress(''); gateB.open(); G.ask('Go on!', '✅ GO ON! ➡️');
+      G.progress(''); gateB.open(); G.goal(V(0, 0, -127)); G.ask('Go on!', '✅ GO ON! ➡️', GO);
     });
 
     // The colour bridge: walk on GREEN only, other tiles fall.
@@ -570,13 +682,13 @@ const L4 = {
     for (let r = 0; r < rows; r++) {
       const z = startZ - 2.5 - r * 5;
       for (let c = 0; c < cols; c++) {
-        const isSafe = c === col, color = isSafe ? byId[safe].css : pick(others).css;
+        const isSafe = c === col, cc = isSafe ? byId[safe] : pick(others), color = cc.css;
         const x = (c - 1) * 5;
         const s = block(x, 0, z, tile, 1.2, tile, color);
         if (!isSafe) {
           let falling = false;
           trigger(boxAt(x, 0, z, tile - .6, 1.6, tile - .6), () => {
-            if (falling) return; falling = true;
+            if (falling) return; falling = true; G.voice(`Oh no! This is ${cc.id}!`);
             setTimeout(() => {
               removeSolid(s);
               const fn = tick(dt => { s.mesh.position.y -= dt * 18; });
@@ -588,12 +700,12 @@ const L4 = {
       col = Math.max(0, Math.min(2, col + pick([-1, 0, 1])));
     }
     const bridgeEnd = startZ - rows * 5;
-    onEnter(boxAt(0, 0, startZ + 3, 36, 6, 6), () => G.ask(`Walk on ${safe} only!`, `🌉 WALK ON ${safe.toUpperCase()} ONLY! 🔊`));
+    onEnter(boxAt(0, 0, startZ - 2.5, 16, 6, 5), () => { G.stage(3, 3); G.goal(V(0, 0, startZ - rows * 5 - 10)); G.ask(`Walk on ${safe} only!`, `🌉 WALK ON ${safe.toUpperCase()} ONLY! 🔊`, { ro: 'Mergi doar pe plăcile verzi, celelalte cad!' }); });
     zc = bridgeEnd - 15;
     island(0, zc, 34, 30, '#7ccf5a');
     checkpoint(G, 0, 0, zc + 12);
     const cup = trophy(G, 0, 0, zc - 4);
-    onEnter(boxAt(0, 0, zc + 8, 32, 6, 12), () => { G.good(); G.coin(3); cup.reveal(); G.ask('You did it! Get the trophy!', '🏆 GET THE TROPHY!'); });
+    onEnter(boxAt(0, 0, zc + 8, 32, 6, 12), () => { G.good(); G.coin(3); cup.reveal(); G.goal(V(0, 0, zc - 4)); G.ask('You did it! Get the trophy!', '🏆 GET THE TROPHY!', TROPHY); });
     return { spawn: [0, 0, 8], yaw: 0, sky: 'day' };
   },
 };

@@ -25,12 +25,13 @@ sunLight.shadow.bias = -.0005;
 scene.add(hemi, sunLight, sunLight.target);
 
 // ---------- sky dome with day/night presets ----------
+// el/az place a big sun in the sky (degrees; az<0 = left, az>0 = right of the path); moon/stars show at night.
 export const SKIES = {
-  day: { top: '#3fa9ff', bottom: '#c9ecff', hemi: 1.6, sun: 2.4, sunColor: '#ffffff', stars: 0 },
-  morning: { top: '#ff8fb3', bottom: '#ffe0b0', hemi: 1.3, sun: 1.9, sunColor: '#ffc89a', stars: 0 },
-  afternoon: { top: '#1f8fff', bottom: '#aee3ff', hemi: 1.8, sun: 2.7, sunColor: '#ffffff', stars: 0 },
-  evening: { top: '#3b2470', bottom: '#ff8a5a', hemi: 1, sun: 1.3, sunColor: '#ff9a5a', stars: .3 },
-  night: { top: '#050d24', bottom: '#1c2f63', hemi: .55, sun: .5, sunColor: '#9fb4ff', stars: 1 },
+  day: { top: '#3fa9ff', bottom: '#c9ecff', hemi: 1.6, sun: 2.4, sunColor: '#ffffff', stars: 0, el: 48, az: -25, moon: 0, sunTint: '#fff3a0' },
+  morning: { top: '#ff9ec0', bottom: '#ffe3b3', hemi: 1.3, sun: 1.9, sunColor: '#ffc89a', stars: 0, el: 7, az: -24, moon: 0, sunTint: '#ff9a3c' },
+  afternoon: { top: '#0a7cff', bottom: '#9fdcff', hemi: 1.9, sun: 2.8, sunColor: '#ffffff', stars: 0, el: 62, az: 0, moon: 0, sunTint: '#fff7b0' },
+  evening: { top: '#3b2470', bottom: '#ff8a5a', hemi: 1, sun: 1.4, sunColor: '#ff9a5a', stars: .35, el: 6, az: 24, moon: 0, sunTint: '#ff6a2a' },
+  night: { top: '#050d24', bottom: '#1c2f63', hemi: .6, sun: .55, sunColor: '#9fb4ff', stars: 1, el: -30, az: 38, moon: 1, sunTint: '#ff7a3a' },
 };
 const skyUniforms = { top: { value: new THREE.Color() }, bottom: { value: new THREE.Color() } };
 const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
@@ -38,7 +39,7 @@ const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.Sha
   vertexShader: 'varying vec3 vp; void main(){ vp = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
   fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vp; void main(){ float h = clamp(vp.y*1.4+.15,0.,1.); gl_FragColor = vec4(mix(bottom, top, h),1.); }',
 }));
-dome.renderOrder = -1;
+dome.renderOrder = -2;
 scene.add(dome);
 const starGeo = new THREE.BufferGeometry();
 const starPos = [];
@@ -51,25 +52,60 @@ const starMat = new THREE.PointsMaterial({ color: '#fff7c2', size: 3, sizeAttenu
 dome.add(new THREE.Points(starGeo, starMat));
 scene.fog = new THREE.Fog('#c9ecff', 160, 420);
 
-const skyNow = { top: new THREE.Color(SKIES.day.top), bottom: new THREE.Color(SKIES.day.bottom), hemi: 1.6, sun: 2.4, sunColor: new THREE.Color('#fff'), stars: 0 };
+function skyDisc(draw) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  draw(c.getContext('2d'));
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, fog: false, depthWrite: false, transparent: true }));
+  sp.renderOrder = -1; scene.add(sp); return sp;
+}
+const sunDisc = skyDisc(x => {
+  const g = x.createRadialGradient(128, 128, 30, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(.35, 'rgba(255,255,255,.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  x.fillStyle = '#fff'; x.beginPath(); x.arc(128, 128, 46, 0, 7); x.fill();
+});
+const moonDisc = skyDisc(x => {
+  const g = x.createRadialGradient(128, 128, 40, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,245,190,.45)'); g.addColorStop(1, 'rgba(255,245,190,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  x.fillStyle = '#fff4c2'; x.beginPath(); x.arc(128, 128, 56, 0, 7); x.fill();
+  x.globalCompositeOperation = 'destination-out'; x.beginPath(); x.arc(154, 110, 50, 0, 7); x.fill();
+});
+
+const skyNow = { top: new THREE.Color(SKIES.day.top), bottom: new THREE.Color(SKIES.day.bottom), hemi: 1.6, sun: 2.4, sunColor: new THREE.Color('#fff'), stars: 0, el: 48, az: -25, moon: 0, sunTint: new THREE.Color(SKIES.day.sunTint) };
 let skyTarget = SKIES.day;
 export function setSky(name, instant = false) {
   skyTarget = SKIES[name];
   if (instant) {
-    skyNow.top.set(skyTarget.top); skyNow.bottom.set(skyTarget.bottom); skyNow.sunColor.set(skyTarget.sunColor);
-    skyNow.hemi = skyTarget.hemi; skyNow.sun = skyTarget.sun; skyNow.stars = skyTarget.stars;
+    skyNow.top.set(skyTarget.top); skyNow.bottom.set(skyTarget.bottom); skyNow.sunColor.set(skyTarget.sunColor); skyNow.sunTint.set(skyTarget.sunTint);
+    for (const k of ['hemi', 'sun', 'stars', 'el', 'az', 'moon']) skyNow[k] = skyTarget[k];
   }
 }
 const tmpC = new THREE.Color();
+const skyDir = (el, az) => {
+  const e = THREE.MathUtils.degToRad(el), a = THREE.MathUtils.degToRad(az);
+  return new THREE.Vector3(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e));
+};
 function updateSky(dt) {
-  const k = 1 - Math.exp(-dt * 2);
-  skyNow.top.lerp(tmpC.set(skyTarget.top), k); skyNow.bottom.lerp(tmpC.set(skyTarget.bottom), k); skyNow.sunColor.lerp(tmpC.set(skyTarget.sunColor), k);
-  skyNow.hemi += (skyTarget.hemi - skyNow.hemi) * k; skyNow.sun += (skyTarget.sun - skyNow.sun) * k; skyNow.stars += (skyTarget.stars - skyNow.stars) * k;
+  const k = 1 - Math.exp(-dt * 1.5);
+  skyNow.top.lerp(tmpC.set(skyTarget.top), k); skyNow.bottom.lerp(tmpC.set(skyTarget.bottom), k);
+  skyNow.sunColor.lerp(tmpC.set(skyTarget.sunColor), k); skyNow.sunTint.lerp(tmpC.set(skyTarget.sunTint), k);
+  for (const key of ['hemi', 'sun', 'stars', 'el', 'az', 'moon']) skyNow[key] += (skyTarget[key] - skyNow[key]) * k;
   skyUniforms.top.value.copy(skyNow.top); skyUniforms.bottom.value.copy(skyNow.bottom);
   scene.fog.color.copy(skyNow.bottom);
   hemi.intensity = skyNow.hemi; sunLight.intensity = skyNow.sun; sunLight.color.copy(skyNow.sunColor);
   starMat.opacity = skyNow.stars;
+  // The sun really rises, stands high and sets; the moon comes out at night.
+  sunDisc.position.copy(camera.position).addScaledVector(skyDir(skyNow.el, skyNow.az), 450);
+  sunDisc.scale.setScalar(skyNow.el < 20 ? 95 : 75);
+  sunDisc.material.color.copy(skyNow.sunTint);
+  sunDisc.material.opacity = THREE.MathUtils.clamp((skyNow.el + 8) / 10, 0, 1);
+  moonDisc.position.copy(camera.position).addScaledVector(skyDir(38, -20), 450);
+  moonDisc.scale.setScalar(110); moonDisc.material.opacity = skyNow.moon;
+  lightDir.copy(skyDir(THREE.MathUtils.clamp(skyNow.el, 22, 70), skyNow.az));
 }
+const lightDir = new THREE.Vector3(0, 1, 0);
 
 // ---------- Roblox-ish materials ----------
 function studsTexture() {
@@ -303,7 +339,7 @@ function updateCamera(dt) {
   camera.position.set(camTarget.x + Math.sin(cam.yaw) * cam.dist * cp, camTarget.y + Math.sin(cam.pitch) * cam.dist, camTarget.z + Math.cos(cam.yaw) * cam.dist * cp);
   camera.lookAt(camTarget);
   dome.position.copy(camera.position);
-  sunLight.position.copy(player.pos).add(new THREE.Vector3(30, 70, 25));
+  sunLight.position.copy(player.pos).addScaledVector(lightDir, 90).add(new THREE.Vector3(0, 0, 30));
   sunLight.target.position.copy(player.pos);
 }
 export function snapCamera() { camTarget.copy(player.pos).add(new THREE.Vector3(0, 3.4, 0)); }

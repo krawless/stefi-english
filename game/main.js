@@ -45,12 +45,26 @@ function toast(text) {
   const t = $('#toast'); t.textContent = text; t.classList.add('on');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 1600);
 }
-function ask(text, html, h) {
-  hint = h || text;
-  const el = $('#ask'); el.innerHTML = html || text.toUpperCase();
+// English question + a small Romanian line that tells the child what to do.
+function note(html, ro) {
+  const el = $('#ask'); el.innerHTML = html + (ro ? `<span class="ro">${ro}</span>` : '');
   el.classList.remove('hidden', 'pop'); void el.offsetWidth; el.classList.add('pop');
+}
+function ask(text, html, { hint: h, ro } = {}) {
+  hint = h || text;
+  note(html || text.toUpperCase(), ro);
   return say(text);
 }
+
+// Guide: a big bouncing arrow over the goal and a small one at the player's feet pointing to it.
+const arrowMat = new THREE.MeshStandardMaterial({ color: '#ffd60a', emissive: '#ffb300', emissiveIntensity: .8, roughness: .4 });
+const goalArrow = new THREE.Group();
+const tip = new THREE.Mesh(new THREE.ConeGeometry(1.5, 2.4, 4), arrowMat); tip.rotation.x = Math.PI; goalArrow.add(tip);
+const shaft = new THREE.Mesh(new THREE.BoxGeometry(1, 2.2, 1), arrowMat); shaft.position.y = 2.2; goalArrow.add(shaft);
+const compass = new THREE.Group();
+const chev = new THREE.Mesh(new THREE.ConeGeometry(.7, 1.8, 3), arrowMat); chev.rotation.x = Math.PI / 2; chev.scale.y = .9; compass.add(chev);
+scene.add(goalArrow, compass);
+let goal = null;
 $('#replay').onclick = () => { if (hint) say(hint); };
 $('#lobby').onclick = () => loadLevel(0);
 
@@ -60,18 +74,21 @@ const G = {
   token: 0,
   get name() { return nameNow(); },
   ask,
+  note,
   toast,
+  goal(v) { goal = v ? v.clone() : null; },
+  stage(k, n) { const s = $('#stage'); s.textContent = `🏝️ ${k} / ${n}`; s.classList.remove('hidden'); },
   sky: setSky,
   voice: (text, pitch = 1.1) => say(text, .85, pitch),
   npcSay(g, text) { bubbleSay(g, text, 3500); return say(text, .85, g.userData.p.voice || 1.1); },
   progress(text) { const p = $('#progress'); p.textContent = text; p.classList.toggle('hidden', !text); },
   coin(n) { save.coins += n; persist(); renderCoins(true); coinSound(); },
-  good(pos) { sfx.win(); confetti.burst((pos ? pos.clone() : player.pos.clone()).add(new THREE.Vector3(0, 4, 0)), RAINBOW, 70, 2.4); },
-  bad() { sfx.nope(); player.vel.y = 16; },
+  good(pos) { sfx.win(); toast('✅ YES!'); confetti.burst((pos ? pos.clone() : player.pos.clone()).add(new THREE.Vector3(0, 4, 0)), RAINBOW, 70, 2.4); },
+  bad() { sfx.nope(); toast('❌ TRY AGAIN!'); player.vel.y = 16; },
   sparkle(pos) { confetti.burst(pos, [0xffcc33, 0xffffff, 0xffe066], 80, 2.4); sfx.win(); },
   checkpoint() { toast('🚩 CHECKPOINT!'); sfx.pop(); },
   saidIt(line, html) {
-    ask(`Now you! Say: ${line}`, `${html}<br><small style="font-size:.6em;color:#ff5c8a">🗣️ NOW YOU!</small>`, line);
+    ask(`Now you! Say: ${line}`, `🗣️ NOW YOU!<br>${html}`, { hint: line, ro: 'Spune propoziția cu voce tare, apoi apasă ✅ (sau Enter)' });
     $('#said').classList.remove('hidden');
     return new Promise(res => { saidResolve = res; });
   },
@@ -163,7 +180,7 @@ function loadLevel(i) {
   G.token++;
   closePanels(); speechSynthesis.cancel();
   $('#ask').classList.add('hidden'); $('#said').classList.add('hidden'); saidResolve = null; hint = '';
-  G.progress('');
+  G.progress(''); goal = null; $('#stage').classList.add('hidden');
   clearWorld();
   current = i;
   const info = LEVELS[i].build(G);
@@ -201,5 +218,13 @@ run((dt, t) => {
   me.rotation.y = player.facing;
   animateBlocky(me, dt, t, player.moving, !player.onGround && Math.abs(player.vel.y) > 3);
   if (pet) animatePet(pet, player.pos, player.facing, dt, t);
+  goalArrow.visible = !!goal && !titleOn;
+  if (goal) {
+    goalArrow.position.set(goal.x, goal.y + 9 + Math.sin(t * 3) * .8, goal.z); goalArrow.rotation.y = t * 2;
+    const dx = goal.x - player.pos.x, dz = goal.z - player.pos.z, d = Math.hypot(dx, dz);
+    compass.visible = d > 9 && !titleOn;
+    compass.position.set(player.pos.x + dx / d * 3.2, player.pos.y + .5, player.pos.z + dz / d * 3.2);
+    compass.rotation.y = Math.atan2(dx, dz);
+  } else compass.visible = false;
   confetti.update(dt);
 });
