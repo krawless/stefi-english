@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stefi World</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #3fa9ff; font-family: 'Fredoka', sans-serif; color: #fff; }
+  canvas { display: block; position: fixed; inset: 0; outline: none; }
+  button { font-family: inherit; cursor: pointer; }
+  .panel { background: rgba(20, 24, 32, .62); border-radius: 14px; backdrop-filter: blur(4px); }
+  .hidden { display: none !important; }
+  .stroke { text-shadow: 0 2px 0 #000, 0 -2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000; }
+
+  /* HUD */
+  #hudTL { position: fixed; top: 12px; left: 12px; display: flex; gap: 8px; align-items: center; }
+  #levelName { padding: 8px 16px; font-weight: 700; font-size: 20px; }
+  #hudTR { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; align-items: center; }
+  #coins { padding: 6px 16px 6px 10px; font-weight: 700; font-size: 26px; display: flex; align-items: center; gap: 8px; }
+  #coins i { font-style: normal; font-size: 28px; }
+  #coins.bump { animation: bump .35s; }
+  @keyframes bump { 50% { transform: scale(1.25); } }
+  .hbtn { width: 50px; height: 50px; border: none; font-size: 24px; color: #fff; }
+  .hbtn:hover { background: rgba(20, 24, 32, .8); }
+  #ask { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); padding: 12px 26px; font-weight: 700; font-size: clamp(22px, 2.6vw, 34px);
+    text-align: center; max-width: 90vw; background: #fff; color: #1b2733; border-radius: 18px; border: 4px solid #1b2733; box-shadow: 0 6px 0 rgba(0,0,0,.25); }
+  #ask.pop { animation: pop .35s; }
+  @keyframes pop { 0% { transform: translateX(-50%) scale(.6); } 70% { transform: translateX(-50%) scale(1.08); } 100% { transform: translateX(-50%) scale(1); } }
+  #progress { position: fixed; top: 142px; left: 50%; transform: translateX(-50%); padding: 4px 18px; font-weight: 700; font-size: 26px; letter-spacing: .12em; }
+  #toast { position: fixed; top: 38%; left: 50%; transform: translate(-50%, -50%); font-weight: 700; font-size: clamp(30px, 4vw, 54px); color: #fff; pointer-events: none;
+    opacity: 0; transition: opacity .3s, transform .3s; }
+  #toast.on { opacity: 1; transform: translate(-50%, -70%); }
+  #said { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); border: none; background: #00b06f; color: #fff; font-weight: 700; font-size: 32px;
+    padding: 14px 40px; border-radius: 18px; box-shadow: 0 6px 0 #007a4d; }
+  #said:active { transform: translateX(-50%) translateY(4px); box-shadow: 0 2px 0 #007a4d; }
+  #keys { position: fixed; bottom: 12px; left: 12px; padding: 8px 14px; font-size: 16px; display: flex; gap: 14px; align-items: center; transition: opacity 1s; }
+  #keys b { display: inline-block; min-width: 28px; padding: 2px 7px; margin: 0 1px; border-radius: 6px; background: #fff; color: #1b2733; text-align: center; box-shadow: 0 3px 0 #9aa3ad; }
+
+  /* Title & overlays */
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: rgba(10, 20, 40, .35); }
+  #title h1 { margin: 0; font-size: clamp(64px, 11vw, 150px); line-height: .9; color: #ffd60a; letter-spacing: .02em; transform: rotate(-3deg); }
+  #title h1 span { color: #fff; display: block; font-size: .45em; letter-spacing: .3em; transform: rotate(2deg); }
+  .big { border: none; background: #00b06f; color: #fff; font-weight: 700; font-size: 44px; padding: 14px 70px; border-radius: 20px; box-shadow: 0 8px 0 #007a4d; }
+  .big:active { transform: translateY(5px); box-shadow: 0 3px 0 #007a4d; }
+  .big.blue { background: #1e9bf0; box-shadow: 0 8px 0 #1167a8; }
+  #complete .card { background: #fff; color: #1b2733; border-radius: 26px; padding: 26px 50px; text-align: center; border: 6px solid #1b2733; box-shadow: 0 10px 0 rgba(0,0,0,.3); }
+  #complete h2 { margin: 0; font-size: 56px; color: #00b06f; }
+  #complete p { margin: 8px 0 18px; font-size: 30px; font-weight: 700; }
+  #complete .cup { font-size: 90px; line-height: 1; animation: spin 2s infinite; display: inline-block; }
+  @keyframes spin { 50% { transform: scale(1.15) rotate(8deg); } }
+
+  /* Shop & avatar editor */
+  .side { position: fixed; right: 16px; top: 76px; bottom: 16px; width: min(460px, 46vw); padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .side h3 { margin: 0; font-size: 30px; display: flex; justify-content: space-between; align-items: center; }
+  .side h3 button { border: none; background: #ff3b5c; color: #fff; font-size: 22px; width: 40px; height: 40px; border-radius: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .item { background: rgba(255,255,255,.95); color: #1b2733; border-radius: 14px; padding: 10px 6px; text-align: center; border: 4px solid transparent; }
+  .item .ic { font-size: 44px; line-height: 1.1; }
+  .item .nm { font-weight: 700; font-size: 16px; }
+  .item button { margin-top: 6px; border: none; border-radius: 10px; padding: 6px 12px; font-weight: 700; font-size: 17px; color: #fff; background: #00b06f; width: 100%; }
+  .item button.wear { background: #1e9bf0; } .item button.on { background: #ff8a1c; } .item button:disabled { background: #9aa3ad; }
+  .item.worn { border-color: #ff8a1c; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > span { font-size: 26px; width: 40px; }
+  .sw { width: 46px; height: 46px; border-radius: 10px; border: 4px solid rgba(255,255,255,.4); }
+  .sw.sel { border-color: #fff; box-shadow: 0 0 0 3px #00b06f; }
+  .opt { min-width: 46px; height: 46px; border-radius: 10px; border: 4px solid rgba(255,255,255,.4); background: rgba(255,255,255,.95); color: #1b2733; font-weight: 700; font-size: 15px; padding: 0 8px; }
+  .opt.sel { border-color: #fff; box-shadow: 0 0 0 3px #00b06f; }
+  #nameIn { font-family: inherit; font-weight: 700; font-size: 26px; text-transform: uppercase; letter-spacing: .1em; border-radius: 10px; border: none; padding: 6px 12px; width: 220px; user-select: text; -webkit-user-select: text; }
+</style>
+<script type="importmap">{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }</script>
+</head>
+<body>
+<div id="hudTL" class="hidden"><div id="levelName" class="panel stroke">LOBBY</div></div>
+<div id="hudTR" class="hidden">
+  <div id="coins" class="panel stroke"><i>🪙</i><span>0</span></div>
+  <button id="replay" class="hbtn panel" title="Listen again">🔊</button>
+  <button id="lobby" class="hbtn panel" title="Lobby">🏠</button>
+</div>
+<div id="ask" class="hidden"></div>
+<div id="progress" class="panel stroke hidden"></div>
+<div id="toast" class="stroke"></div>
+<button id="said" class="hidden">✅ I SAID IT!</button>
+<div id="keys" class="panel hidden">
+  <span><b>W</b><b>A</b><b>S</b><b>D</b> / <b>⬆</b><b>⬇</b><b>⬅</b><b>➡</b> mergi</span>
+  <span><b style="min-width:80px">SPACE</b> sari</span>
+  <span>🖱️ trage = rotește camera</span>
+</div>
+
+<div id="title" class="screen">
+  <h1 class="stroke">STEFI<span>WORLD</span></h1>
+  <button id="play" class="big">▶ PLAY</button>
+</div>
+
+<div id="complete" class="screen hidden">
+  <div class="card">
+    <div class="cup">🏆</div>
+    <h2 id="cTitle">LEVEL COMPLETE!</h2>
+    <p id="cText">+20 🪙</p>
+    <button id="cBtn" class="big blue">🏠 LOBBY</button>
+  </div>
+</div>
+
+<div id="shop" class="side panel hidden">
+  <h3 class="stroke">🛒 SHOP <button data-close>✖</button></h3>
+  <div id="shopGrid" class="grid"></div>
+</div>
+
+<div id="editor" class="side panel hidden">
+  <h3 class="stroke">👕 AVATAR <button data-close>✖</button></h3>
+  <div class="row"><span>🙂</span><div id="eSkin" class="row"></div></div>
+  <div class="row"><span>👕</span><div id="eShirt" class="row"></div></div>
+  <div class="row"><span>👖</span><div id="ePants" class="row"></div></div>
+  <div class="row"><span>💇</span><div id="eHair" class="row"></div></div>
+  <div class="row"><span>🎨</span><div id="eHairC" class="row"></div></div>
+  <div class="row"><span>✏️</span><input id="nameIn" maxlength="10" spellcheck="false"></div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

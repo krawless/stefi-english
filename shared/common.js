@@ -202,8 +202,8 @@ export function updateTweens(dt) {
 }
 
 // ---------- confetti ----------
-export function createConfetti(scene, N = 400) {
-  const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(.16, .1), new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: .6 }), N);
+export function createConfetti(scene, N = 400, size = 1) {
+  const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(.16 * size, .1 * size), new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: .6 }), N);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.frustumCulled = false;
   const parts = Array.from({ length: N }, (_, i) => {
